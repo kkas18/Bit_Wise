@@ -116,14 +116,14 @@ body.light .card{box-shadow:0 1px 2px rgba(18,26,40,.05),0 8px 24px -12px rgba(1
 .disp-inner{transition:transform .18s var(--ease),opacity .18s var(--ease);display:flex;flex-direction:column;flex:1;min-height:0}
 .disp-inner.slide-l{transform:translateX(-28px);opacity:0}
 .disp-inner.slide-r{transform:translateX(28px);opacity:0}
-.pending{min-height:20px;font:400 14px/20px var(--sans);color:var(--text-dim);text-align:right;overflow:hidden;white-space:nowrap;cursor:pointer}
+.pending{flex:none;min-height:20px;font:400 14px/20px var(--sans);color:var(--text-dim);text-align:right;overflow:hidden;white-space:nowrap;cursor:pointer}
 .pending .op-chip{color:var(--text);font-weight:600}
 .swap-hint{
   display:inline-flex;align-items:center;height:22px;font-size:13px;color:var(--text-dim);
   background:var(--panel-2);border-radius:7px;padding:0 8px;margin-left:6px;vertical-align:-5px;
 }
 .main-val{
-  cursor:pointer;
+  cursor:pointer;flex:none;
   font:400 clamp(34px,12.5vw,58px)/1.1 var(--sans);text-align:right;color:var(--text);
   min-height:1.2em;word-break:break-all;letter-spacing:-.025em;
   max-height:3.4em;overflow:hidden;
@@ -139,16 +139,21 @@ body.light .card{box-shadow:0 1px 2px rgba(18,26,40,.05),0 8px 24px -12px rgba(1
 }
 .main-val.err::after{display:none}
 @keyframes caret{0%,55%{opacity:1}56%,100%{opacity:.12}}
-.conv{display:flex;flex-direction:column;gap:0;margin-top:auto;padding-top:6px}
-.conv-row{display:flex;align-items:center;gap:10px;cursor:pointer;height:26px;border-radius:var(--r-sm);padding:0 6px;margin:0 -6px;transition:background .12s}
+.conv{flex:none;display:flex;flex-direction:column;gap:0;margin-top:auto;padding-top:6px}
+.insight{flex:none}
+.conv-row{display:flex;align-items:flex-start;gap:10px;cursor:pointer;min-height:26px;border-radius:var(--r-sm);padding:4px 6px;margin:0 -6px;transition:background .12s}
 .conv-row:active{background:var(--panel-2)}
 .conv-row .lbl{font:700 10.5px/18px var(--sans);letter-spacing:.08em;width:40px;height:18px;text-align:center;border-radius:6px;flex:none}
 .conv-row[data-mode="HEX"] .lbl{color:var(--hex);background:var(--hex-dim)}
 .conv-row[data-mode="DEC"] .lbl{color:var(--dec);background:var(--dec-dim)}
 .conv-row[data-mode="OCT"] .lbl{color:var(--oct);background:var(--oct-dim)}
 .conv-row[data-mode="BIN"] .lbl{color:var(--bin);background:var(--bin-dim)}
-.conv-row .val{font:500 14px/1.3 var(--sans);text-align:right;flex:1;word-break:break-all;color:var(--text-dim);max-height:2.6em;overflow:hidden}
+.conv-row .val{font:500 14px/1.3 var(--sans);text-align:right;flex:1;word-break:break-all;color:var(--text-dim)}
+.conv-row .val.long{font-size:12.5px;line-height:1.35}
+.conv-row .val.xlong{font-size:11px;line-height:1.4}
 .conv-row[data-mode="BIN"] .val{font:500 12px/1.3 var(--mono);letter-spacing:.02em}
+.conv-row[data-mode="BIN"] .val.long{font-size:11px}
+.conv-row[data-mode="BIN"] .val.xlong{font-size:9.5px;letter-spacing:0}
 
 /* ---------- Word-size row ---------- */
 .meta{display:flex;gap:8px;padding:6px 12px 8px;align-items:center}
@@ -763,9 +768,11 @@ function renderDisplay(){
   $("pending").innerHTML=(S.acc!==null&&S.op)
     ?`${fmt(S.acc,S.mode,S.bits,S.signed)} <span class="op-chip">${OP_SYM[S.op]}</span> <span class="swap-hint">⇄</span>`
     :"";
-  $("conv").innerHTML=MODES.filter(m=>m!==S.mode).map(m=>
-    `<div class="conv-row" data-mode="${m}"><span class="lbl">${m}</span><span class="val">${S.err?"—":fmt(S.cur,m,S.bits,S.signed)}</span></div>`
-  ).join("");
+  $("conv").innerHTML=MODES.filter(m=>m!==S.mode).map(m=>{
+    const t=S.err?"—":fmt(S.cur,m,S.bits,S.signed);
+    const cls=t.length>78?" xlong":t.length>30?" long":"";
+    return `<div class="conv-row" data-mode="${m}"><span class="lbl">${m}</span><span class="val${cls}">${t}</span></div>`;
+  }).join("");
   $("insight").innerHTML=S.err?"":insights(S.cur,S.mode,S.bits).map(i=>
     `<span class="pill" data-copy="${(i.c||i.t).replace(/"/g,"&quot;")}">${i.swatch?`<span class="swatch" style="background:${i.swatch}"></span>`:""}${i.t}</span>`
   ).join("");
