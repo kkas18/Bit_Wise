@@ -3,10 +3,10 @@ import {
   MODES, WORD_SIZES, mask, fmt, literal, popcount, msbIndex, extract,
   f32parts, f64parts, fmtFloat, insights, group,
   createState, pressKey, swapOperands, undoClear, setBit, setWordSize,
-} from "./core.js";
-import { t, hint, setLang, lang, detectLang, DICT } from "./i18n.js";
+} from "./core.js?v=__BUILD__";
+import { t, hint, setLang, lang, detectLang, DICT } from "./i18n.js?v=__BUILD__";
 
-const VERSION = "15";
+const VERSION = "16";
 const BUILD = "__BUILD__";
 
 /* ================= utilities ================= */
@@ -39,9 +39,12 @@ function fitText(el) {
   else if (n > 24) el.classList.add("sz-s");
   else if (n > 13) el.classList.add("sz-m");
   if (!el.clientHeight) return;
+  /* overflowing means a hidden line, not the 1–2px of rounding that fractional
+     device pixel ratios (2.625, 2.75 …) produce between scroll and client height */
+  const overflows = () => el.scrollHeight - el.clientHeight > 0.5 * (parseFloat(getComputedStyle(el).lineHeight) || 16);
   let px = parseFloat(getComputedStyle(el).fontSize) || 24;
   let guard = 40;
-  while (el.scrollHeight > el.clientHeight + 1 && px > 12 && guard-- > 0) {
+  while (overflows() && px > 11 && guard-- > 0) {
     px -= 1.5;
     el.style.fontSize = px + "px";
   }
@@ -70,11 +73,24 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 1600);
 }
 let lastCopy = "";
-function copyText(s) {
+function legacyCopy(s) {
+  const ta = document.createElement("textarea");
+  ta.value = s;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}
+async function copyText(s) {
   lastCopy = s;
-  try { navigator.clipboard && navigator.clipboard.writeText(s).catch(() => {}); } catch { /* denied */ }
-  toast(t("toast.copied", { v: s }));
-  haptic(8);
+  let ok = false;
+  try { await navigator.clipboard.writeText(s); ok = true; } catch { ok = legacyCopy(s); }
+  toast(t(ok ? "toast.copied" : "toast.copyFail", { v: s }));
+  haptic(ok ? 8 : 30);
 }
 
 /* ================= back-button aware layers =================
@@ -166,6 +182,8 @@ function renderPad() {
   const L = LAYOUTS[S.mode];
   const pad = $("pad");
   pad.style.setProperty("--cols", L.cols);
+  const slots = L.keys.reduce((n, spec) => n + Number(spec.split("*")[1] || 1), 0);
+  root.dataset.rows = String(Math.ceil(slots / L.cols));
   pad.innerHTML = L.keys.map((spec) => {
     const [k, span] = spec.split("*");
     const def = KEY[k];
@@ -195,7 +213,7 @@ function renderDisplay() {
   }).join("");
 
   /* insights describe a settled value; hide them while an operation is pending */
-  $("insight").innerHTML = S.err || S.op ? "" : insights(S.cur, S.mode, S.bits).map((i) => {
+  $("insight").innerHTML = S.err || S.op ? "" : insights(S.cur, S.mode, S.bits, S.signed).map((i) => {
     const text = t("ins." + i.kind, { v: i.value });
     return `<button class="pill" data-copy="${esc(i.copy || text)}">${i.swatch ? `<span class="pill__swatch" style="background:${esc(i.swatch)}"></span>` : ""}${esc(text)}</button>`;
   }).join("");
@@ -218,6 +236,7 @@ function renderInspector() {
   setSeg($("viewSeg"), (b) => b.dataset.view === UI.view);
   const fold = $("fold");
   fold.setAttribute("aria-expanded", String(UI.inspecting));
+  $("inspect").hidden = !UI.inspecting;
   fold.setAttribute("aria-label", t(UI.inspecting ? "a.collapse" : "a.expand"));
   if (!UI.inspecting) return;
 
@@ -263,10 +282,10 @@ function renderInspector() {
         const c = i === width - 1 ? "fs" : (i >= p.mbits ? "fe" : "fm");
         strip += `<span class="fbit ${c}${on}"></span>`;
       }
-      return `<div class="frow"><span class="frow__lbl">${name}</span><span class="frow__val">${esc(fmtFloat(p.val))}</span><span class="frow__cls" data-c="${p.cls}">${p.cls}</span></div>
+      return `<div class="frow"><span class="frow__lbl">${name}</span><span class="frow__val">${esc(fmtFloat(p.val, width))}</span><span class="frow__cls" data-c="${p.cls}">${esc(t("fcls." + p.cls))}</span></div>
         <div class="fparts">S ${p.s} · E ${eb}₂ (${p.e}${unb}) · M 0x${p.m.toString(16).toUpperCase()}</div>
         <div class="fstrip" aria-hidden="true">${strip}</div>
-        <div class="fgrp" aria-hidden="true"><span style="flex:1">S</span><span style="flex:${p.ebits}">EXP</span><span style="flex:${p.mbits}">MANTISSA</span></div>`;
+        <div class="fgrp" aria-hidden="true"><span style="flex:1">S</span><span style="flex:${p.ebits}">${esc(t("float.expShort"))}</span><span style="flex:${p.mbits}">${esc(t("float.mantShort"))}</span></div>`;
     };
     let html = `<div class="statline"><span><i class="fkey fs"></i>${esc(t("float.sign"))}</span><span><i class="fkey fe"></i>${esc(t("float.exp"))}</span><span><i class="fkey fm"></i>${esc(t("float.mant"))}</span></div>`;
     html += one(f32parts(v), "FLOAT32", 32);
@@ -274,20 +293,18 @@ function renderInspector() {
     body.innerHTML = html;
   } else {
     const nBytes = S.bits / 8;
-    let str = "";
-    for (let i = nBytes - 1; i >= 0; i--) {
-      const b = Number((v >> BigInt(i * 8)) & 0xFFn);
-      str += b >= 32 && b < 127 ? String.fromCharCode(b) : "·";
-    }
-    let rows = `<div class="bytes-str"><span class="lbl">ASCII</span>${esc(str)}</div>`;
-    rows += `<div class="byte-head"><span>${esc(t("bytes.byte"))}</span><span>HEX</span><span>DEC</span><span>ASC</span><span class="b-bin">${esc(t("bytes.bin"))}</span></div>`;
     const order = [];
     for (let i = nBytes - 1; i >= 0; i--) order.push(i);
     if (UI.endian === "LE") order.reverse();
+    const byteAt = (i) => Number((v >> BigInt(i * 8)) & 0xFFn);
+    const ascii = (b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : "·");
+    const str = order.map((i) => ascii(byteAt(i))).join("");
+    let rows = `<div class="bytes-str"><span class="lbl">ASCII</span>${esc(str)}</div>`;
+    rows += `<div class="byte-head"><span>${esc(t("bytes.byte"))}</span><span>HEX</span><span>DEC</span><span>ASC</span><span class="b-bin">${esc(t("bytes.bin"))}</span></div>`;
     for (const i of order) {
-      const b = Number((v >> BigInt(i * 8)) & 0xFFn);
-      const asc = b >= 32 && b < 127 ? esc(String.fromCharCode(b)) : "·";
-      rows += `<div class="byte-row${b ? " nz" : ""}" style="--w:${(b / 255 * 100).toFixed(1)}%"><span>${i}</span><span>${b.toString(16).toUpperCase().padStart(2, "0")}</span><span>${b}</span><span>${asc}</span><span class="b-bin">${b.toString(2).padStart(8, "0").replace(/(\d{4})(\d{4})/, "$1 $2")}</span></div>`;
+      const b = byteAt(i);
+      const asc = esc(ascii(b));
+      rows += `<div class="byte-row${b ? " nz" : ""}"><span>${i}</span><span>${b.toString(16).toUpperCase().padStart(2, "0")}</span><span>${b}</span><span>${asc}</span><span class="b-bin">${b.toString(2).padStart(8, "0").replace(/(\d{4})(\d{4})/, "$1 $2")}</span></div>`;
     }
     body.innerHTML = rows;
   }
@@ -313,22 +330,33 @@ function press(k) {
 function swap() {
   if (swapOperands(S) === "ok") { haptic(8); render(); }
 }
+let modeTimer = null;
 function setMode(m, dir) {
-  if (m === S.mode) return;
+  const inner = $("dispInner");
+  if (modeTimer) { /* a switch is still sliding: finish it now so keys never act on a stale base */
+    clearTimeout(modeTimer); modeTimer = null;
+    inner.classList.remove("slide-l", "slide-r");
+    dir = null;
+  }
+  if (m === S.mode) { render(); return; }
+  S.mode = m; /* state changes immediately; only the visual transition is delayed */
   store.set("bw.base", m);
   haptic(8);
-  const inner = $("dispInner");
   const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!dir || reduce) { S.mode = m; render(); return; }
+  if (!dir || reduce) { render(); return; }
+  syncPad();
   inner.classList.add(dir === "left" ? "slide-l" : "slide-r");
-  setTimeout(() => {
-    S.mode = m; render();
+  modeTimer = setTimeout(() => {
+    modeTimer = null;
+    render();
     inner.classList.remove("slide-l", "slide-r");
     inner.classList.add(dir === "left" ? "slide-r" : "slide-l");
     requestAnimationFrame(() => requestAnimationFrame(() => inner.classList.remove("slide-l", "slide-r")));
   }, 130);
 }
 const dirTo = (m) => (MODES.indexOf(m) > MODES.indexOf(S.mode) ? "left" : "right");
+/* the keypad must match the base even mid-animation */
+function syncPad() { renderPad(); setSeg($("baseSeg"), (b) => b.dataset.mode === S.mode); }
 function setBits(n) {
   setWordSize(S, n);
   store.set("bw.bits", String(n));
@@ -372,10 +400,8 @@ function armLongPress(target) {
   lp.timer = setTimeout(() => {
     lp.fired = true;
     if (k === "AC") {
-      const ok = undoClear(S);
-      if (ok) render();
-      toast(t(ok ? "toast.restored" : "toast.nothing"));
-      haptic(12);
+      if (undoClear(S)) { render(); toast(t("toast.restored")); haptic(12); }
+      else press("AC"); /* nothing to restore: a long press still clears */
       return;
     }
     const [title, text, ex] = hint(k);
@@ -467,20 +493,24 @@ body.addEventListener("pointerdown", (e) => {
     haptic(15);
   }, 450);
 });
+const endPaint = () => { clearTimeout(paint.timer); paint.start = null; };
 body.addEventListener("pointermove", (e) => {
   if (paint.start === null || UI.field.active) return;
+  if (e.buttons === 0) { endPaint(); return; } /* button released outside the grid */
   const b = bitAt(e.clientX, e.clientY);
   if (!b) return;
   const i = Number(b.dataset.bit);
+  let changed = false;
   if (!paint.active) {
     if (i === paint.start) return;
     clearTimeout(paint.timer);
     paint.active = true; paint.fired = true; haptic(6);
-    setBit(S, paint.start, paint.set);
+    changed = setBit(S, paint.start, paint.set);
   }
-  if (setBit(S, i, paint.set) || paint.active) render();
+  if (setBit(S, i, paint.set)) changed = true;
+  if (changed) render();
 });
-["pointerup", "pointercancel"].forEach((ev) => body.addEventListener(ev, () => { clearTimeout(paint.timer); paint.start = null; }));
+["pointerup", "pointercancel"].forEach((ev) => window.addEventListener(ev, endPaint));
 body.addEventListener("click", (e) => {
   if (paint.fired) { paint.fired = false; return; }
   if (paint.hinted) { paint.hinted = false; return; }
@@ -531,10 +561,19 @@ document.addEventListener("keydown", (e) => {
 
 document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".hintcard")) hideHint(); }, true);
 
+/* a mouse click must not leave focus on a key, or Enter would repeat that key instead of "=" */
+document.addEventListener("mousedown", (e) => {
+  if (e.target.closest(".app button")) e.preventDefault();
+});
+
 /* hardware keyboard */
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (document.querySelector("dialog[open]")) return;
+  /* Enter / Space on a focused control activate that control, as everywhere else —
+     except Enter on a tab or segment, which already selected itself with the arrow keys */
+  const ctl = e.target !== document.body && e.target.closest("button, a, input, select, textarea, [tabindex]");
+  if ((e.key === "Enter" || e.key === " ") && ctl && !(e.key === "Enter" && ctl.matches(".tabs__btn, .seg__btn"))) return;
   const map = { "+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", Enter: "EQ", "=": "EQ",
     Backspace: "BS", Escape: "AC", Delete: "AC", "~": "NOT", "&": "AND", "|": "OR", "^": "XOR" };
   const k = e.key;
@@ -628,8 +667,11 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     refreshing = true;
     location.reload();
   });
-  navigator.serviceWorker.register("./sw.js").then((reg) => {
+  /* announce offline support only once a worker has actually installed and activated */
+  navigator.serviceWorker.ready.then(() => {
     if (!store.get("bw.sw")) { store.set("bw.sw", "1"); toast(t("toast.offline")); }
+  });
+  navigator.serviceWorker.register("./sw.js").then((reg) => {
     const offer = (w) => {
       if (!navigator.serviceWorker.controller) return;
       $("updateBar").hidden = false;
@@ -650,6 +692,8 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
 applyTheme();
 applyLang();
 window.addEventListener("resize", renderDisplay);
+/* re-fit the value once the real fonts have replaced the fallback */
+if (document.fonts) document.fonts.ready.then(renderDisplay);
 
 /* test surface (used by the Playwright checks; harmless in production) */
 window.BITWISE = {

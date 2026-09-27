@@ -36,6 +36,14 @@ const nb = {
   "float.sign": "Fortegn",
   "float.exp": "Eksponent",
   "float.mant": "Mantisse",
+  "float.expShort": "EKSP",
+  "float.mantShort": "MANTISSE",
+  "fcls.normal": "normal",
+  "fcls.subnormal": "subnormal",
+  "fcls.zero": "null",
+  "fcls.NaN": "NaN",
+  "fcls.Infinity": "uendelig",
+  "toast.copyFail": "Kunne ikke kopiere — nettleseren nektet tilgang",
   "bytes.byte": "Byte",
   "bytes.bin": "Binært",
 
@@ -43,7 +51,6 @@ const nb = {
 
   "toast.copied": "Kopiert {v}",
   "toast.restored": "Gjenopprettet",
-  "toast.nothing": "Ingenting å gjenopprette",
   "toast.offline": "Klar til bruk uten nett",
   "toast.installing": "Installerer BitWise …",
   "toast.installed": "BitWise er installert",
@@ -87,7 +94,7 @@ const nb = {
       "Signert bruker toerkomplement: den høyeste biten er fortegnet.",
     ]],
     ["Inspektør", [
-      "Åpne inspektøren (⌃) for å se og endre enkeltbits, bytes (BE/LE) og IEEE 754-flyttall.",
+      "Åpne inspektøren (⌃ ved siden av Signert) for å se og endre enkeltbits, bytes (BE/LE) og IEEE 754-flyttall.",
       "Trykk på en rute for å snu biten, dra over flere for å male dem, hold inne for å se vekten.",
       "Felt: trykk på to bits for å lese verdien mellom dem, som et maskinvareregister.",
     ]],
@@ -152,6 +159,14 @@ const en = {
   "float.sign": "Sign",
   "float.exp": "Exponent",
   "float.mant": "Mantissa",
+  "float.expShort": "EXP",
+  "float.mantShort": "MANTISSA",
+  "fcls.normal": "normal",
+  "fcls.subnormal": "subnormal",
+  "fcls.zero": "zero",
+  "fcls.NaN": "NaN",
+  "fcls.Infinity": "infinity",
+  "toast.copyFail": "Couldn't copy — the browser refused access",
   "bytes.byte": "Byte",
   "bytes.bin": "Binary",
 
@@ -159,7 +174,6 @@ const en = {
 
   "toast.copied": "Copied {v}",
   "toast.restored": "Restored",
-  "toast.nothing": "Nothing to restore",
   "toast.offline": "Ready to use offline",
   "toast.installing": "Installing BitWise …",
   "toast.installed": "BitWise installed",
@@ -203,7 +217,7 @@ const en = {
       "Signed uses two's complement: the top bit is the sign.",
     ]],
     ["Inspector", [
-      "Open the inspector (⌃) to view and flip single bits, bytes (BE/LE) and IEEE 754 floats.",
+      "Open the inspector (⌃ next to Signed) to view and flip single bits, bytes (BE/LE) and IEEE 754 floats.",
       "Tap a square to flip a bit, drag across several to paint them, long-press to see its weight.",
       "Field: tap two bits to read the value between them, like a hardware register.",
     ]],

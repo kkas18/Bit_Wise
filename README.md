@@ -29,6 +29,7 @@ tools/twa/sign.sh           signerer APK/AAB og lager assetlinks.json
 ```bash
 npm ci
 npm run serve        # http://localhost:8080
+npm run lint         # ESLint
 npm test             # enhetstester
 npm run test:e2e     # nettlesertester + tilgjengelighet
 ```
@@ -36,10 +37,18 @@ npm run test:e2e     # nettlesertester + tilgjengelighet
 ## Nettappen (GitHub Pages)
 
 1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+   ⚠️ Står kilden på «Deploy from a branch», publiserer GitHub også README-en
+   over appen ved hver push. Workflowens `guard`-jobb oppdager det og legger
+   appen tilbake automatisk (og advarer i kjøringen), men riktig innstilling
+   fjerner problemet helt.
 2. Push til `main`. Testene kjøres først, deretter publiseres `public/` til
    `https://kkas18.github.io/Bit_Wise/`.
-3. Byggnummeret (commit-hash) stemples inn i `sw.js`, så hver publisering gir
-   en ny cache og en «Oppdater»-linje i appen.
+3. Byggnummeret (commit-hash) stemples inn i `sw.js`, `index.html` og alle
+   modul-URL-er (`?v=…`), så hver publisering gir en ny cache og en
+   «Oppdater»-linje i appen — og en side kan aldri blande to versjoner.
+4. Service workeren installerer en ny versjon bare når hele appen lastet ned
+   og startsiden faktisk er BitWise. Ved en feilpublisering fortsetter
+   installerte apper å kjøre siste fungerende versjon.
 
 ## Android-appen (TWA)
 

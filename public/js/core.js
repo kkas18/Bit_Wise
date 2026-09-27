@@ -92,21 +92,32 @@ export function f64parts(v) {
   const cls = e === 2047 ? (m ? "NaN" : "Infinity") : e === 0 ? (m ? "subnormal" : "zero") : "normal";
   return { s, e, m, val, cls, bias: 1023, ebits: 11, mbits: 52 };
 }
-export function fmtFloat(val) {
+/* Shortest decimal that reads back to exactly this float (like JS/Python repr).
+   Integers below 1e15 are printed with every digit, never rounded. */
+export function fmtFloat(val, bits = 64) {
   if (Number.isNaN(val)) return "NaN";
   if (!isFinite(val)) return val > 0 ? "+∞" : "−∞";
   if (val === 0) return Object.is(val, -0) ? "−0" : "0";
   const a = Math.abs(val);
-  if (a >= 1e-4 && a < 1e15) return String(parseFloat(val.toPrecision(9)));
-  return val.toExponential(6);
+  if (Number.isInteger(val) && a < 1e15) return val.toFixed(0).replaceAll("-", "−");
+  let digits = 17;
+  if (bits === 32) {
+    for (let p = 1; p <= 9; p++) if (Math.fround(Number(val.toPrecision(p))) === val) { digits = p; break; }
+  } else {
+    for (let p = 1; p <= 17; p++) if (Number(val.toPrecision(p)) === val) { digits = p; break; }
+  }
+  const out = a >= 1e-4 && a < 1e15 ? String(Number(val.toPrecision(digits))) : val.toExponential(digits - 1);
+  return out.replaceAll("-", "−");
 }
 
 /* Insight engine: recognises what a value probably means.
    Returns language-neutral descriptors; the UI turns them into text. */
-export function insights(v, mode, bits) {
+export function insights(v, mode, bits, signed = false) {
   const out = [];
   v = mask(v, bits);
   if (v === 0n) return out;
+  /* the number as the user reads it: in signed DEC a set top bit means negative */
+  const shown = mode === "DEC" && signed ? toSigned(v, bits) : v;
   if (mode === "OCT" && v <= 0o7777n) {
     const p = Number(v & 0o777n);
     const rwx = (n) => ((n & 4) ? "r" : "-") + ((n & 2) ? "w" : "-") + ((n & 1) ? "x" : "-");
@@ -121,6 +132,7 @@ export function insights(v, mode, bits) {
     const ip = [24, 16, 8, 0].map((sh) => Number((v >> BigInt(sh)) & 0xFFn)).join(".");
     out.push({ kind: "ipv4", value: ip, copy: ip });
   }
+  if (shown < 0n) return out; /* value-based hints below describe non-negative numbers only */
   if (v >= 32n && v <= 126n) out.push({ kind: "ascii", value: String.fromCharCode(Number(v)) });
   if (mode === "DEC" && v >= 946684800n && v <= 4102444800n) {
     const iso = new Date(Number(v) * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC";
@@ -155,7 +167,7 @@ export function createState(over = {}) {
 }
 
 function clearErr(s) {
-  if (s.err) { s.err = false; s.cur = 0n; s.acc = null; s.op = null; s.fresh = true; s.operand = false; }
+  if (s.err) { s.err = false; s.cur = 0n; s.acc = null; s.op = null; s.fresh = true; s.operand = false; s.rep = null; }
 }
 
 function inputDigit(s, d) {
@@ -163,13 +175,10 @@ function inputDigit(s, d) {
   const base = BASE[s.mode];
   const digits = d === "00" ? [0n, 0n] : [BigInt(parseInt(d, 16))];
   if (digits.some((x) => x >= base)) return "rejected";
-  if (s.fresh) { s.cur = 0n; s.fresh = false; }
-  s.operand = true;
-  for (const dg of digits) {
-    const next = s.cur * base + dg;
-    if (next !== mask(next, s.bits)) return "overflow";
-    s.cur = next;
-  }
+  let next = s.fresh ? 0n : s.cur;
+  for (const dg of digits) next = next * base + dg;
+  if (next !== mask(next, s.bits)) return "overflow"; /* "00" never half-applies */
+  s.cur = next; s.fresh = false; s.operand = true;
   return "ok";
 }
 
@@ -179,7 +188,7 @@ function pressOp(s, op) {
     if (s.acc !== null && s.op && s.operand) { s.acc = applyOp(s.acc, s.cur, s.op, s.bits, s.signed); s.cur = s.acc; }
     else if (s.acc === null || !s.op) s.acc = s.cur;
     s.op = op; s.fresh = true; s.operand = false;
-  } catch { s.err = true; s.acc = null; s.op = null; return "error"; }
+  } catch { s.err = true; s.acc = null; s.op = null; s.rep = null; return "error"; }
   return "ok";
 }
 
@@ -187,14 +196,14 @@ function pressEq(s) {
   clearErr(s);
   if (s.acc === null || !s.op) {
     if (!s.rep) return "ok";
-    try { s.cur = applyOp(s.cur, s.rep.b, s.rep.op, s.bits, s.signed); } catch { s.err = true; return "error"; }
+    try { s.cur = applyOp(s.cur, s.rep.b, s.rep.op, s.bits, s.signed); } catch { s.err = true; s.rep = null; return "error"; }
     s.fresh = true;
     return "ok";
   }
   const b = s.cur;
   let res = "ok";
   try { s.cur = applyOp(s.acc, s.cur, s.op, s.bits, s.signed); s.rep = { op: s.op, b }; }
-  catch { s.err = true; res = "error"; }
+  catch { s.err = true; s.rep = null; res = "error"; }
   s.acc = null; s.op = null; s.fresh = true; s.operand = false;
   return res;
 }
@@ -203,6 +212,13 @@ const unary = (s, f) => { clearErr(s); s.cur = f(s.cur, s.bits); s.fresh = true;
 
 /* Applies one key to the state (mutating it). Returns "ok" | "rejected" | "overflow" | "error". */
 export function pressKey(s, k) {
+  const res = applyKey(s, k);
+  /* undo only restores a clear that no accepted input followed */
+  if (k !== "AC" && res !== "rejected" && res !== "overflow") s.undo = null;
+  return res;
+}
+
+function applyKey(s, k) {
   switch (k) {
     case "AC":
       if (!s.err && (s.cur !== 0n || s.acc !== null)) s.undo = { cur: s.cur, acc: s.acc, op: s.op };
@@ -224,7 +240,7 @@ export function pressKey(s, k) {
 
 export function swapOperands(s) {
   if (s.acc === null || !s.op || s.err) return "rejected";
-  const a = s.acc; s.acc = s.cur; s.cur = a; s.fresh = true; s.operand = true;
+  const a = s.acc; s.acc = s.cur; s.cur = a; s.fresh = true; s.operand = true; s.undo = null;
   return "ok";
 }
 
@@ -239,7 +255,7 @@ export function setBit(s, i, on) {
   const m = 1n << BigInt(i);
   const nv = mask(on ? (s.cur | m) : (s.cur & ~m), s.bits);
   if (nv === mask(s.cur, s.bits)) return false;
-  clearErr(s); s.cur = nv; s.fresh = true; s.operand = true;
+  clearErr(s); s.cur = nv; s.fresh = true; s.operand = true; s.undo = null;
   return true;
 }
 
@@ -247,4 +263,8 @@ export function setWordSize(s, n) {
   s.bits = n;
   s.cur = mask(s.cur, n);
   if (s.acc !== null) s.acc = mask(s.acc, n);
+  if (s.undo) { /* a restored value must fit the new word size too */
+    s.undo.cur = mask(s.undo.cur, n);
+    if (s.undo.acc !== null) s.undo.acc = mask(s.undo.acc, n);
+  }
 }

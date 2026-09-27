@@ -23,8 +23,8 @@
     "path": "./android.keystore",
     "alias": "bitwise"
   },
-  "appVersionCode": 15000,
-  "appVersion": "15.0.0",
+  "appVersionCode": 16000,
+  "appVersion": "16.0.0",
   "shortcuts": [],
   "generatorApp": "bubblewrap-core",
   "fallbackType": "customtabs",

@@ -11,9 +11,15 @@ const TYPES = {
   ".png": "image/png", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
 };
 
-export function serve(port = 0) {
+/* options.override(path) may return {status, type, body} to replace a response
+   (the e2e tests use it to simulate a broken deploy). */
+export function serve(port = 0, { override } = {}) {
   const server = createServer(async (req, res) => {
-    const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    let path;
+    try { path = decodeURIComponent(new URL(req.url, "http://x").pathname); }
+    catch { res.writeHead(400).end("bad request"); return; }
+    const forced = override && override(path);
+    if (forced) { res.writeHead(forced.status || 200, { "Content-Type": forced.type || "text/html; charset=utf-8" }).end(forced.body); return; }
     const file = normalize(join(ROOT, path.endsWith("/") ? path + "index.html" : path));
     if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
     try {

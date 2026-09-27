@@ -1,12 +1,13 @@
 {
   "name": "bitwise",
-  "version": "15.0.0",
+  "version": "16.0.0",
   "private": true,
   "description": "BitWise \u2014 programmer calculator (PWA + Android TWA)",
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
     "test:e2e": "node --test test/e2e/*.e2e.js",
+    "lint": "eslint .",
     "serve": "node tools/serve.mjs"
   },
   "engines": {
@@ -15,6 +16,9 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@bubblewrap/core": "^1.25.0",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^15.15.0",
     "playwright": "1.56.1"
   }
 }

@@ -128,3 +128,60 @@ test("bits and word size", () => {
   setWordSize(s, 8);
   assert.equal(s.cur, 0n, "masked to 8 bits");
 });
+
+/* ---------------- review fixes ---------------- */
+test("an error forgets the repeated operation", () => {
+  const s = createState({ mode: "DEC" });
+  keys(s, ["5", "ADD", "3", "EQ", "8", "DIV", "0", "EQ"]);
+  assert.equal(s.err, true);
+  pressKey(s, "EQ");
+  assert.equal(s.err, false);
+  assert.equal(s.cur, 0n, "no stale + 3 replayed");
+});
+
+test("undo only restores a clear that nothing followed", () => {
+  const s = createState({ mode: "DEC" });
+  keys(s, ["1", "2", "3", "4", "AC", "5", "MUL", "6", "EQ"]);
+  assert.equal(undoClear(s), false);
+  assert.equal(s.cur, 30n, "the newer result survives");
+});
+
+test("00 is all-or-nothing on overflow", () => {
+  const s = createState({ mode: "HEX", bits: 8 });
+  keys(s, ["1"]);
+  assert.equal(pressKey(s, "00"), "overflow");
+  assert.equal(s.cur, 1n, "not half-applied to 0x10");
+});
+
+test("floats print exactly (shortest round-trip, whole integers in full)", async () => {
+  const { fmtFloat, f32parts: f32, f64parts: f64 } = await import("../public/js/core.js");
+  assert.equal(fmtFloat(f64(0x4271F71FB04CB000n).val), "1234567890123");
+  assert.equal(fmtFloat(f32(0x56800001n).val, 32), "70368752566272");
+  assert.equal(fmtFloat(f32(0x40490FDBn).val, 32), "3.1415927");
+  assert.equal(fmtFloat(f32(0x3DCCCCCDn).val, 32), "0.1");
+  assert.equal(fmtFloat(-2.5), "−2.5");
+});
+
+test("hint chips follow signed DEC values", () => {
+  assert.deepEqual(insights(3000000000n, "DEC", 32, true), [], "negative in signed mode: no Unix time");
+  assert.deepEqual(insights(0xFFFFFFFFFFFFFFFFn, "DEC", 64, true), [], "-1 is not 'max u64'");
+  assert.equal(insights(3000000000n, "DEC", 32, false)[0].kind, "unix");
+});
+
+test("rejected keys keep the undo; word size changes mask it", () => {
+  const s = createState({ mode: "OCT" });
+  keys(s, ["7", "7", "AC"]);
+  assert.equal(pressKey(s, "9"), "rejected");
+  assert.equal(undoClear(s), true, "a rejected digit did not wipe the undo");
+  assert.equal(s.cur, 0o77n);
+  const w = createState({ mode: "HEX", bits: 64 });
+  keys(w, ["F", "F", "F", "F", "AC"]);
+  setWordSize(w, 8);
+  undoClear(w);
+  assert.equal(w.cur, 0xFFn, "restored value fits 8 bits");
+});
+
+test("minus signs are typographic everywhere in float output", async () => {
+  const { fmtFloat } = await import("../public/js/core.js");
+  assert.equal(fmtFloat(-1.5e-7), "−1.5e−7");
+});

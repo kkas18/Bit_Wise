@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="nb" data-theme="dark">
+<html lang="nb" data-theme="dark" data-app="bitwise">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -16,7 +16,9 @@
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preload" href="fonts/ibm-plex-sans-latin-300-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/ibm-plex-sans-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css?v=__BUILD__">
 <script>
 /* apply the saved theme before first paint so there is no flash */
@@ -25,6 +27,10 @@
   try { p = localStorage.getItem("bw.theme"); } catch (e) {}
   var dark = p === "dark" || (p !== "light" && !(window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches));
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  /* reserve the keypad's height before the app script fills it (no layout shift) */
+  var base = null;
+  try { base = localStorage.getItem("bw.base"); } catch (e) {}
+  document.documentElement.dataset.rows = base === "OCT" || base === "BIN" ? "5" : "6";
 })();
 </script>
 <script type="module" src="js/app.js?v=__BUILD__"></script>
@@ -65,7 +71,11 @@
       <div class="disp-inner" id="dispInner">
         <button class="pending" id="pending" hidden data-i18n-aria="a.swap"></button>
         <div class="value" id="mainVal" aria-live="polite">0</div>
-        <div class="conv" id="conv"></div>
+        <div class="conv" id="conv">
+          <button class="conv__row" data-mode="DEC" tabindex="-1"><span class="conv__lbl">DEC</span><span class="conv__val">0</span></button>
+          <button class="conv__row" data-mode="OCT" tabindex="-1"><span class="conv__lbl">OCT</span><span class="conv__val">0</span></button>
+          <button class="conv__row" data-mode="BIN" tabindex="-1"><span class="conv__lbl">BIN</span><span class="conv__val">0</span></button>
+        </div>
         <div class="insight" id="insight"></div>
       </div>
     </div>
@@ -80,9 +90,12 @@
         <button class="seg__btn" role="radio" data-bits="128">128</button>
       </div>
       <button class="toggle" id="sgn" aria-pressed="false" data-i18n="signed">Signert</button>
+      <button class="icon-btn icon-btn--line" id="fold" aria-expanded="false" aria-controls="inspect" data-i18n-aria="a.expand">
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+      </button>
     </div>
 
-    <section class="inspect" id="inspect" data-i18n-aria="a.inspector">
+    <section class="inspect" id="inspect" data-i18n-aria="a.inspector" hidden>
       <div class="inspect__head">
         <div class="seg seg--view" id="viewSeg" role="tablist">
           <span class="seg__ind" aria-hidden="true"></span>
@@ -93,10 +106,6 @@
         <button class="toggle toggle--sm" id="fieldBtn" aria-pressed="false" data-i18n="field">Felt</button>
         <button class="toggle toggle--sm" id="endBtn" hidden>BE</button>
         <button class="toggle toggle--sm" id="copyBtn" hidden data-i18n="copy">Kopier</button>
-        <span class="spacer"></span>
-        <button class="icon-btn icon-btn--flat" id="fold" aria-expanded="false" aria-controls="inspectBody" data-i18n-aria="a.expand">
-          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
-        </button>
       </div>
       <div class="inspect__body" id="inspectBody"></div>
     </section>
