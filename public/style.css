@@ -331,6 +331,7 @@ button:focus:not(:focus-visible) { outline: none; }
 .drawer.is-open .drawer__toggle .chev { transform: rotate(180deg); }
 .drawer__body { overflow: hidden; min-height: 0; }
 .drawer.is-open .drawer__body { padding-bottom: 2px; }
+.view:has(.drawer.is-open) .tape__empty { display: none; }
 .view:has(.drawer.is-open) .keys--std { grid-auto-rows: clamp(44px, 6.4dvh, 60px); padding-top: var(--s1); }
 .view:has(.drawer.is-open) .k--op { font-size: 26px; }
 .view:has(.drawer.is-open) .k { font-size: 23px; }

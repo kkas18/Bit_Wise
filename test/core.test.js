@@ -204,3 +204,10 @@ test("token rendering", () => {
   const t = [N("2"), O("*"), O("-"), N("3"), O("+"), { t: "fn", v: "sqrt" }, N("16"), { t: "rp" }];
   assert.equal(renderTokens(t, EN), "2 × −3 + √(16)");
 });
+
+test("inserting a number after a closed value multiplies explicitly", () => {
+  const s = run([["lp"], ["digit", "2"], ["op", "+"], ["digit", "3"], ["rp"], ["insert", "-4"]]);
+  assert.deepEqual(s.tokens.slice(-2), [O("*"), N("-4")]);
+  assert.equal(evaluate(s.tokens), -20);
+  assert.equal(renderTokens(s.tokens, EN), "(2 + 3) × −4");
+});

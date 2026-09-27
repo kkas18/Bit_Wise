@@ -117,6 +117,7 @@ function applyLang() {
   $("helpBody").innerHTML = t("help.sections").map(([h, items]) =>
     `<section><h3>${esc(h)}</h3><ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul></section>`).join("");
   setSeg($("langSeg"), (b) => b.dataset.langPref === prefs.lang);
+  syncSciLabel();
   padMode = null;
   renderAll();
 }
@@ -266,9 +267,14 @@ function stdEquals() {
   }
   if (!SD.tokens.length) return;
   const tokens = SD.tokens.slice();
+  if (!hasOperation(tokens)) { /* a bare number: nothing to calculate or log */
+    try { SD.tokens = [{ t: "num", v: numToken(evaluate(tokens)) }]; } catch { return; }
+    SD.fresh = true; SD.lastTokens = null; SD.rep = null;
+    return;
+  }
   try {
     const v = tidy(evaluate(tokens, { deg: SD.deg }));
-    SD.rep = repeatTail(tokens) || SD.rep;
+    SD.rep = repeatTail(tokens);
     SD.lastTokens = tokens;
     pushHistory(tokens, v);
     SD.tokens = [{ t: "num", v: numToken(v) }];
@@ -358,6 +364,7 @@ const S = {
   cur: 0n, acc: null, op: null, fresh: true, err: false,
   view: "bits", endian: "BE", field: { active: false, a: null, b: null },
   inspecting: false, rep: null, undo: null, flash: null,
+  operand: false, /* a second operand was entered since the last operator */
 };
 const OP_SYM = { AND: "AND", OR: "OR", XOR: "XOR", ADD: "+", SUB: "−", MUL: "×", DIV: "÷", MOD: "MOD", SHL: "<<", SHR: ">>" };
 
@@ -540,12 +547,13 @@ function render() {
   sgn.setAttribute("aria-pressed", String(S.signed));
 }
 
-function clearErr() { if (S.err) { S.err = false; S.cur = 0n; S.acc = null; S.op = null; S.fresh = true; } }
+function clearErr() { if (S.err) { S.err = false; S.cur = 0n; S.acc = null; S.op = null; S.fresh = true; S.operand = false; } }
 function inputDigit(d) {
   clearErr();
   const base = BASE[S.mode];
   const digits = d === "00" ? [0n, 0n] : [BigInt(parseInt(d, 16))];
   if (S.fresh) { S.cur = 0n; S.fresh = false; }
+  S.operand = true;
   for (const dg of digits) {
     if (dg >= base) return;
     const next = S.cur * base + dg;
@@ -556,9 +564,9 @@ function inputDigit(d) {
 function pressOp(op) {
   clearErr();
   try {
-    if (S.acc !== null && S.op && !S.fresh) { S.acc = applyOp(S.acc, S.cur, S.op, S.bits, S.signed); S.cur = S.acc; }
-    else S.acc = S.cur;
-    S.op = op; S.fresh = true;
+    if (S.acc !== null && S.op && S.operand) { S.acc = applyOp(S.acc, S.cur, S.op, S.bits, S.signed); S.cur = S.acc; }
+    else if (S.acc === null || !S.op) S.acc = S.cur;
+    S.op = op; S.fresh = true; S.operand = false;
   } catch { S.err = true; S.acc = null; S.op = null; haptic(40); }
 }
 function pressEq() {
@@ -572,20 +580,20 @@ function pressEq() {
   }
   const b = S.cur;
   try { S.cur = applyOp(S.acc, S.cur, S.op, S.bits, S.signed); S.rep = { op: S.op, b }; } catch { S.err = true; haptic(40); }
-  S.acc = null; S.op = null; S.fresh = true;
+  S.acc = null; S.op = null; S.fresh = true; S.operand = false;
 }
 function press(k) {
   switch (k) {
     case "AC":
       if (!S.err && (S.cur !== 0n || S.acc !== null)) S.undo = { cur: S.cur, acc: S.acc, op: S.op };
-      S.cur = 0n; S.acc = null; S.op = null; S.fresh = true; S.err = false; S.rep = null; break;
+      S.cur = 0n; S.acc = null; S.op = null; S.fresh = true; S.err = false; S.rep = null; S.operand = false; break;
     case "BS": clearErr(); if (!S.fresh) S.cur = S.cur / BASE[S.mode]; break;
-    case "CE": clearErr(); S.cur = 0n; S.fresh = true; break;
+    case "CE": clearErr(); S.cur = 0n; S.fresh = true; S.operand = true; break;
     case "SWP": swapOperands(); return;
-    case "NOT": clearErr(); S.cur = opNOT(S.cur, S.bits); S.fresh = true; break;
-    case "NEG": clearErr(); S.cur = opNEG(S.cur, S.bits); S.fresh = true; break;
-    case "ROL": clearErr(); S.cur = rol(S.cur, S.bits); S.fresh = true; break;
-    case "ROR": clearErr(); S.cur = ror(S.cur, S.bits); S.fresh = true; break;
+    case "NOT": clearErr(); S.cur = opNOT(S.cur, S.bits); S.fresh = true; S.operand = true; break;
+    case "NEG": clearErr(); S.cur = opNEG(S.cur, S.bits); S.fresh = true; S.operand = true; break;
+    case "ROL": clearErr(); S.cur = rol(S.cur, S.bits); S.fresh = true; S.operand = true; break;
+    case "ROR": clearErr(); S.cur = ror(S.cur, S.bits); S.fresh = true; S.operand = true; break;
     case "EQ": pressEq(); break;
     case "AND": case "OR": case "XOR": case "ADD": case "SUB":
     case "MUL": case "DIV": case "MOD": case "SHL": case "SHR": pressOp(k); break;
@@ -595,12 +603,12 @@ function press(k) {
 }
 function swapOperands() {
   if (S.acc === null || !S.op || S.err) return;
-  const a = S.acc; S.acc = S.cur; S.cur = a; S.fresh = true;
+  const a = S.acc; S.acc = S.cur; S.cur = a; S.fresh = true; S.operand = true;
   haptic(8); render();
 }
 function undoPrg() {
   if (!S.undo) return false;
-  S.cur = S.undo.cur; S.acc = S.undo.acc; S.op = S.undo.op; S.undo = null; S.fresh = true;
+  S.cur = S.undo.cur; S.acc = S.undo.acc; S.op = S.undo.op; S.undo = null; S.fresh = true; S.operand = S.op !== null;
   render();
   return true;
 }
@@ -641,7 +649,7 @@ function copyBase(mode) {
 function setBitTo(i, on) {
   const m = 1n << BigInt(i);
   const nv = mask(on ? (S.cur | m) : (S.cur & ~m), S.bits);
-  if (nv !== mask(S.cur, S.bits)) { clearErr(); S.cur = nv; S.fresh = true; render(); }
+  if (nv !== mask(S.cur, S.bits)) { clearErr(); S.cur = nv; S.fresh = true; S.operand = true; render(); }
 }
 
 /* =====================================================================
@@ -812,7 +820,7 @@ $("inspectBody").addEventListener("click", (e) => {
   }
   clearErr();
   S.cur = mask(S.cur ^ (1n << BigInt(i)), S.bits);
-  S.fresh = true; S.flash = i;
+  S.fresh = true; S.operand = true; S.flash = i;
   render();
   S.flash = null;
 });
@@ -856,11 +864,14 @@ $("histClear").addEventListener("click", () => {
 });
 $("sResult").addEventListener("click", copyStd);
 
+function syncSciLabel() {
+  $("sciToggle").setAttribute("aria-label", t($("sci").classList.contains("is-open") ? "a.sciClose" : "a.sciOpen"));
+}
 function setSci(open) {
   const d = $("sci");
   d.classList.toggle("is-open", open);
   $("sciToggle").setAttribute("aria-expanded", String(open));
-  $("sciToggle").setAttribute("aria-label", t(open ? "a.sciClose" : "a.sciOpen"));
+  syncSciLabel();
   store.set("bw.sci", open ? "1" : "0");
   $("angleBadge").hidden = !open;
 }

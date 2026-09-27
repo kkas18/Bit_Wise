@@ -81,6 +81,21 @@ test("programmer: bases, insights, bit inspector", async () => {
   await page.context().close();
 });
 
+test("pending operations survive unary keys; = repeats only its own expression", async () => {
+  const page = await open();
+  await page.click('[data-app="PRG"]');
+  await page.click('#baseSeg [data-mode="DEC"]');
+  await page.waitForFunction(() => window.BITWISE.S.mode === "DEC");
+  await tap(page, "#pad", ["5", "ADD", "3", "ROL", "MUL", "2", "EQ"]);
+  assert.equal(await text(page, "#mainVal"), "22", "(5 + ROL 3) × 2");
+
+  await page.click('[data-app="STD"]');
+  await tap(page, "#sPad", ["2", "ADD", "3", "EQ", "7", "EQ", "EQ"]);
+  assert.equal(await text(page, "#sResult"), "7");
+  assert.equal(await page.locator(".tape__row").count(), 1);
+  await page.context().close();
+});
+
 test("undo, memory, keyboard and v13 history migration", async () => {
   const ctx = await browser.newContext({ viewport: { width: 393, height: 852 }, locale: "nb-NO", reducedMotion: "reduce" });
   await ctx.addInitScript(() => {

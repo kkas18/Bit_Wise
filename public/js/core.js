@@ -418,7 +418,10 @@ export function edit(state, key, arg) {
       const l = last();
       if (fresh || !l) tokens = [{ t: "num", v: arg }];
       else if (l.t === "num") tokens[tokens.length - 1] = { t: "num", v: arg };
-      else tokens.push({ t: "num", v: arg });
+      else {
+        if (endsValue(l)) tokens.push({ t: "op", v: "*" }); /* (2+3) then MR → (2+3) × m */
+        tokens.push({ t: "num", v: arg });
+      }
       fresh = false;
       break;
     }
