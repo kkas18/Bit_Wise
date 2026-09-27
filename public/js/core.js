@@ -1,9 +1,6 @@
 /* BitWise calculation core — pure functions, no DOM.
+   Programmer arithmetic on BigInt with a fixed word size.
    Shared by the app (browser, ES module) and the unit tests (node:test). */
-
-/* ===================================================================
-   Programmer calculator (BigInt, fixed word size, immediate execution)
-   =================================================================== */
 export const MODES = ["HEX", "DEC", "OCT", "BIN"];
 export const BASE = { HEX: 16n, DEC: 10n, OCT: 8n, BIN: 2n };
 export const GROUP = { HEX: 4, DEC: 3, OCT: 3, BIN: 4 };
@@ -140,381 +137,114 @@ export function insights(v, mode, bits) {
 }
 
 /* ===================================================================
-   Standard / scientific calculator — expression engine
-   Tokens:
-     {t:"num", v:"12.5E-3"}   number literal as typed ("." decimal, "E" exponent)
-     {t:"op",  v:"+|-|*|/|^"}
-     {t:"lp"} {t:"rp"}
-     {t:"fn",  v:"sin|cos|tan|asin|acos|atan|ln|log|sqrt|cbrt|exp|pow10"} (includes its "(")
-     {t:"post",v:"%|!|sq|cube|inv"}
-     {t:"const", v:"pi|e"}
+   Key handling — a small state machine, DOM-free so it can be tested.
+   state: {mode, bits, signed, cur, acc, op, fresh, err, operand, rep, undo}
    =================================================================== */
-export class CalcError extends Error {
-  constructor(code) { super(code); this.code = code; }
-}
-/* error codes: "div0" division by zero, "domain" invalid input, "overflow", "syntax" */
+export const BINARY_OPS = ["AND", "OR", "XOR", "ADD", "SUB", "MUL", "DIV", "MOD", "SHL", "SHR"];
 
-const FN = {
-  sin: (x, deg) => trig(Math.sin, x, deg),
-  cos: (x, deg) => trig(Math.cos, x, deg),
-  tan: (x, deg) => {
-    if (deg && Math.abs(((x % 180) + 180) % 180 - 90) < 1e-12) throw new CalcError("domain");
-    const r = trig(Math.tan, x, deg);
-    if (Math.abs(r) > 1e15) throw new CalcError("domain");
-    return r;
-  },
-  asin: (x, deg) => { if (x < -1 || x > 1) throw new CalcError("domain"); return fromRad(Math.asin(x), deg); },
-  acos: (x, deg) => { if (x < -1 || x > 1) throw new CalcError("domain"); return fromRad(Math.acos(x), deg); },
-  atan: (x, deg) => fromRad(Math.atan(x), deg),
-  ln: (x) => { if (x <= 0) throw new CalcError("domain"); return Math.log(x); },
-  log: (x) => { if (x <= 0) throw new CalcError("domain"); return Math.log10(x); },
-  sqrt: (x) => { if (x < 0) throw new CalcError("domain"); return Math.sqrt(x); },
-  cbrt: (x) => Math.cbrt(x),
-  exp: (x) => Math.exp(x),
-  pow10: (x) => Math.pow(10, x),
-};
-function trig(f, x, deg) {
-  const r = f(deg ? x * Math.PI / 180 : x);
-  return Math.abs(r) < 1e-12 ? 0 : r;
-}
-function fromRad(r, deg) { return deg ? r * 180 / Math.PI : r; }
-
-function factorial(x) {
-  if (x < 0 || Math.abs(x - Math.round(x)) > 1e-9) throw new CalcError("domain");
-  const n = Math.round(x);
-  if (n > 170) throw new CalcError("overflow");
-  let r = 1;
-  for (let i = 2; i <= n; i++) r *= i;
-  return r;
+export function createState(over = {}) {
+  return {
+    mode: "HEX", bits: 64, signed: false,
+    cur: 0n, acc: null, op: null,
+    fresh: true, err: false,
+    operand: false, /* a second operand was entered since the last operator */
+    rep: null,      /* last {op, b} for repeated = */
+    undo: null,     /* snapshot restored by long-pressing AC */
+    ...over,
+  };
 }
 
-export function parseNum(s) {
-  /* tolerate an unfinished exponent while typing: "1.5E" / "1.5E-" */
-  const clean = s.replace(/E-?$/, "");
-  if (clean === "" || clean === "." || clean === "-") return 0;
-  const n = Number(clean);
-  if (Number.isNaN(n)) throw new CalcError("syntax");
-  return n;
+function clearErr(s) {
+  if (s.err) { s.err = false; s.cur = 0n; s.acc = null; s.op = null; s.fresh = true; s.operand = false; }
 }
 
-/* Recursive-descent evaluator with conventional precedence:
-     expr    := term (('+'|'-') term)*          a ± b%  → a ± a·b/100
-     term    := factor (('*'|'/'|implicit) factor)*
-     factor  := ('-'|'+') factor | power
-     power   := postfix ('^' factor)?           right-associative, -2^2 = -4
-     postfix := primary ('%'|'!'|'sq'|'cube'|'inv')*
-     primary := num | const | '(' expr ')' | fn expr ')'
-   Unclosed parentheses are closed implicitly. */
-export function evaluate(tokens, { deg = true } = {}) {
-  let i = 0;
-  const peek = () => tokens[i];
-  const startsPrimary = (t) => t && (t.t === "num" || t.t === "const" || t.t === "lp" || t.t === "fn");
-
-  function expr() {
-    let left = term();
-    while (peek() && peek().t === "op" && (peek().v === "+" || peek().v === "-")) {
-      const op = tokens[i++].v;
-      if (!peek()) break; /* trailing operator while typing: ignore */
-      const right = term();
-      const rv = right.pct ? left.v * right.v : right.v;
-      left = { v: op === "+" ? left.v + rv : left.v - rv };
-    }
-    return left;
+function inputDigit(s, d) {
+  clearErr(s);
+  const base = BASE[s.mode];
+  const digits = d === "00" ? [0n, 0n] : [BigInt(parseInt(d, 16))];
+  if (digits.some((x) => x >= base)) return "rejected";
+  if (s.fresh) { s.cur = 0n; s.fresh = false; }
+  s.operand = true;
+  for (const dg of digits) {
+    const next = s.cur * base + dg;
+    if (next !== mask(next, s.bits)) return "overflow";
+    s.cur = next;
   }
-  function term() {
-    let left = factor();
-    for (;;) {
-      const t = peek();
-      if (t && t.t === "op" && (t.v === "*" || t.v === "/")) {
-        i++;
-        if (!peek()) break;
-        const r = factor().v;
-        if (t.v === "/" && r === 0) throw new CalcError("div0");
-        left = { v: t.v === "*" ? left.v * r : left.v / r };
-      } else if (startsPrimary(t)) {
-        left = { v: left.v * factor().v }; /* implicit multiplication: 2π, 3(4), 2sin(30) */
-      } else break;
-    }
-    return left;
-  }
-  function factor() {
-    const t = peek();
-    if (t && t.t === "op" && (t.v === "-" || t.v === "+")) {
-      i++;
-      if (!peek()) return { v: 0 };
-      const f = factor();
-      return t.v === "-" ? { v: -f.v, pct: f.pct } : f;
-    }
-    return power();
-  }
-  function power() {
-    const base = postfix();
-    const t = peek();
-    if (t && t.t === "op" && t.v === "^") {
-      i++;
-      if (!peek()) return base;
-      const ex = factor().v;
-      const r = Math.pow(base.v, ex);
-      if (Number.isNaN(r)) throw new CalcError("domain");
-      return { v: r };
-    }
-    return base;
-  }
-  function postfix() {
-    let node = primary();
-    while (peek() && peek().t === "post") {
-      const p = tokens[i++].v;
-      if (p === "%") node = { v: node.v / 100, pct: true };
-      else if (p === "!") node = { v: factorial(node.v) };
-      else if (p === "sq") node = { v: node.v * node.v };
-      else if (p === "cube") node = { v: node.v * node.v * node.v };
-      else if (p === "inv") {
-        if (node.v === 0) throw new CalcError("div0");
-        node = { v: 1 / node.v };
-      }
-    }
-    return node;
-  }
-  function closeParen() {
-    if (peek() && peek().t === "rp") i++;
-  }
-  function primary() {
-    const t = tokens[i++];
-    if (!t) throw new CalcError("syntax");
-    if (t.t === "num") return { v: parseNum(t.v) };
-    if (t.t === "const") return { v: t.v === "pi" ? Math.PI : Math.E };
-    if (t.t === "lp") {
-      if (peek() && peek().t === "rp") throw new CalcError("syntax");
-      const v = expr().v;
-      closeParen();
-      return { v };
-    }
-    if (t.t === "fn") {
-      if (!peek() || peek().t === "rp") throw new CalcError("syntax");
-      const x = expr().v;
-      closeParen();
-      return { v: FN[t.v](x, deg) };
-    }
-    throw new CalcError("syntax");
-  }
-
-  if (!tokens.length) return 0;
-  const out = expr();
-  if (i < tokens.length) throw new CalcError("syntax");
-  if (!isFinite(out.v)) throw new CalcError(Number.isNaN(out.v) ? "domain" : "overflow");
-  return out.v;
+  return "ok";
 }
 
-/* Normalise floating point noise: 0.1+0.2 → 0.3, keeps 12 significant digits */
-export function tidy(x) {
-  if (!isFinite(x)) return x;
-  const r = parseFloat(x.toPrecision(12));
-  return Object.is(r, -0) ? 0 : r;
+function pressOp(s, op) {
+  clearErr(s);
+  try {
+    if (s.acc !== null && s.op && s.operand) { s.acc = applyOp(s.acc, s.cur, s.op, s.bits, s.signed); s.cur = s.acc; }
+    else if (s.acc === null || !s.op) s.acc = s.cur;
+    s.op = op; s.fresh = true; s.operand = false;
+  } catch { s.err = true; s.acc = null; s.op = null; return "error"; }
+  return "ok";
 }
 
-/* Canonical "typed" string for a number, suitable as a num token value */
-export function numToken(x) {
-  x = tidy(x);
-  let s = String(x);
-  if (s.includes("e")) s = s.replace("e+", "E").replace("e", "E");
-  return s;
-}
-
-/* Does the token list contain anything worth previewing (an operation)? */
-export function hasOperation(tokens) {
-  return tokens.some((t) => t.t !== "num") || tokens.length > 1;
-}
-
-export function openParens(tokens) {
-  let n = 0;
-  for (const t of tokens) {
-    if (t.t === "lp" || t.t === "fn") n++;
-    else if (t.t === "rp") n--;
+function pressEq(s) {
+  clearErr(s);
+  if (s.acc === null || !s.op) {
+    if (!s.rep) return "ok";
+    try { s.cur = applyOp(s.cur, s.rep.b, s.rep.op, s.bits, s.signed); } catch { s.err = true; return "error"; }
+    s.fresh = true;
+    return "ok";
   }
-  return n;
+  const b = s.cur;
+  let res = "ok";
+  try { s.cur = applyOp(s.acc, s.cur, s.op, s.bits, s.signed); s.rep = { op: s.op, b }; }
+  catch { s.err = true; res = "error"; }
+  s.acc = null; s.op = null; s.fresh = true; s.operand = false;
+  return res;
 }
 
-/* ---------- editing: pure reducer over the token list ----------
-   state = {tokens, fresh}  (fresh = the tokens hold a finished result) */
-const MAX_DIGITS = 15;
-const endsValue = (t) => t && (t.t === "num" || t.t === "rp" || t.t === "const" || t.t === "post");
+const unary = (s, f) => { clearErr(s); s.cur = f(s.cur, s.bits); s.fresh = true; s.operand = true; return "ok"; };
 
-export function edit(state, key, arg) {
-  let tokens = state.tokens.slice();
-  let fresh = state.fresh;
-  const last = () => tokens[tokens.length - 1];
-  const startNew = () => { if (fresh) { tokens = []; fresh = false; } };
-  const keepResult = () => { fresh = false; };
-
-  switch (key) {
-    case "digit": {
-      startNew();
-      const l = last();
-      if (l && l.t === "num") {
-        if (l.v.replace(/[-.E]/g, "").length >= MAX_DIGITS) break;
-        tokens[tokens.length - 1] = { t: "num", v: l.v === "0" ? arg : l.v === "-0" ? "-" + arg : l.v + arg };
-      } else {
-        if (endsValue(l)) tokens.push({ t: "op", v: "*" }); /* (2+3)4 reads as (2+3) × 4 */
-        tokens.push({ t: "num", v: arg });
-      }
-      break;
-    }
-    case "dot": {
-      startNew();
-      const l = last();
-      if (l && l.t === "num") {
-        if (!l.v.includes(".") && !l.v.includes("E")) tokens[tokens.length - 1] = { t: "num", v: l.v + "." };
-      } else tokens.push({ t: "num", v: "0." });
-      break;
-    }
-    case "exp": { /* EE: scientific-notation entry */
-      keepResult();
-      const l = last();
-      if (l && l.t === "num" && !l.v.includes("E") && /\d/.test(l.v)) {
-        tokens[tokens.length - 1] = { t: "num", v: l.v.replace(/\.$/, "") + "E" };
-      }
-      break;
-    }
-    case "op": {
-      keepResult();
-      const l = last();
-      if (l && l.t === "num" && /E$/.test(l.v)) { /* 1.5E then − → negative exponent */
-        if (arg === "-") tokens[tokens.length - 1] = { t: "num", v: l.v + "-" };
-        break;
-      }
-      if (!l) {
-        if (arg === "-") tokens.push({ t: "op", v: "-" });
-        else tokens.push({ t: "num", v: "0" }, { t: "op", v: arg });
-      } else if (l.t === "op") {
-        const prev = tokens[tokens.length - 2];
-        if (arg === "-" && l.v !== "-" && l.v !== "+") tokens.push({ t: "op", v: "-" }); /* 2 × −3 */
-        else if (prev && prev.t === "op") { tokens.splice(-2, 2, { t: "op", v: arg }); } /* "× −" then "+" */
-        else if (!prev || prev.t === "lp" || prev.t === "fn") { if (arg === "-") tokens[tokens.length - 1] = l; }
-        else tokens[tokens.length - 1] = { t: "op", v: arg };
-      } else if (l.t === "lp" || l.t === "fn") {
-        if (arg === "-") tokens.push({ t: "op", v: "-" });
-      } else tokens.push({ t: "op", v: arg });
-      break;
-    }
-    case "lp": startNew(); tokens.push({ t: "lp" }); break;
-    case "rp": {
-      keepResult();
-      if (openParens(tokens) > 0 && endsValue(last())) tokens.push({ t: "rp" });
-      break;
-    }
-    case "paren": { /* smart ( ) key: close when it makes sense, otherwise open */
-      if (!fresh && openParens(tokens) > 0 && endsValue(last())) tokens.push({ t: "rp" });
-      else { startNew(); tokens.push({ t: "lp" }); }
-      break;
-    }
-    case "fn": startNew(); tokens.push({ t: "fn", v: arg }); break;
-    case "const": startNew(); tokens.push({ t: "const", v: arg }); break;
-    case "post": {
-      keepResult();
-      if (endsValue(last())) tokens.push({ t: "post", v: arg });
-      break;
-    }
-    case "insert": { /* a number from memory or history */
-      const l = last();
-      if (fresh || !l) tokens = [{ t: "num", v: arg }];
-      else if (l.t === "num") tokens[tokens.length - 1] = { t: "num", v: arg };
-      else {
-        if (endsValue(l)) tokens.push({ t: "op", v: "*" }); /* (2+3) then MR → (2+3) × m */
-        tokens.push({ t: "num", v: arg });
-      }
-      fresh = false;
-      break;
-    }
-    case "neg": { /* ± toggles the sign of the number being typed */
-      keepResult();
-      const l = last();
-      if (l && l.t === "num") {
-        tokens[tokens.length - 1] = { t: "num", v: l.v.startsWith("-") ? l.v.slice(1) : "-" + l.v };
-      } else if (!l || l.t === "op" || l.t === "lp" || l.t === "fn") {
-        tokens.push({ t: "num", v: "-0" });
-      } else {
-        tokens.unshift({ t: "op", v: "-" }, { t: "lp" });
-        tokens.push({ t: "rp" });
-      }
-      break;
-    }
-    case "back": {
-      if (fresh) { tokens = []; fresh = false; break; }
-      const l = last();
-      if (!l) break;
-      if (l.t === "num" && l.v.length > 1 && l.v !== "-0") {
-        const v = l.v.slice(0, -1);
-        if (v === "-" || v === "") tokens.pop();
-        else tokens[tokens.length - 1] = { t: "num", v };
-      } else tokens.pop();
-      break;
-    }
-    case "clear": tokens = []; fresh = false; break;
+/* Applies one key to the state (mutating it). Returns "ok" | "rejected" | "overflow" | "error". */
+export function pressKey(s, k) {
+  switch (k) {
+    case "AC":
+      if (!s.err && (s.cur !== 0n || s.acc !== null)) s.undo = { cur: s.cur, acc: s.acc, op: s.op };
+      s.cur = 0n; s.acc = null; s.op = null; s.fresh = true; s.err = false; s.rep = null; s.operand = false;
+      return "ok";
+    case "BS": clearErr(s); if (!s.fresh) s.cur = s.cur / BASE[s.mode]; return "ok";
+    case "CE": clearErr(s); s.cur = 0n; s.fresh = true; s.operand = true; return "ok";
+    case "SWP": return swapOperands(s);
+    case "NOT": return unary(s, opNOT);
+    case "NEG": return unary(s, opNEG);
+    case "ROL": return unary(s, rol);
+    case "ROR": return unary(s, ror);
+    case "EQ": return pressEq(s);
+    default:
+      if (BINARY_OPS.includes(k)) return pressOp(s, k);
+      return inputDigit(s, k);
   }
-  return { tokens, fresh };
 }
 
-/* For "= = =": the trailing "op number" at depth 0 of an expression, if any */
-export function repeatTail(tokens) {
-  const n = tokens.length;
-  if (n < 3) return null;
-  const a = tokens[n - 2], b = tokens[n - 1];
-  if (a.t !== "op" || b.t !== "num" || openParens(tokens) !== 0) return null;
-  const before = tokens[n - 3];
-  if (!endsValue(before)) return null;
-  return [a, b];
+export function swapOperands(s) {
+  if (s.acc === null || !s.op || s.err) return "rejected";
+  const a = s.acc; s.acc = s.cur; s.cur = a; s.fresh = true; s.operand = true;
+  return "ok";
 }
 
-/* ---------- presentation helpers (locale aware, but pure) ---------- */
-export function formatNumberString(s, { decimal = ".", groupSep = "," } = {}) {
-  /* s is a canonical literal ("-1234.5E-3"); group the integer part */
-  let neg = s.startsWith("-");
-  if (neg) s = s.slice(1);
-  let exp = "";
-  const ei = s.indexOf("E");
-  if (ei >= 0) { exp = s.slice(ei); s = s.slice(0, ei); }
-  const [int, frac] = s.split(".");
-  let out = group(int || "0", 3, groupSep);
-  if (s.includes(".")) out += decimal + (frac || "");
-  if (exp) out += exp.replace("-", "−");
-  return (neg ? "−" : "") + out;
+export function undoClear(s) {
+  if (!s.undo) return false;
+  s.cur = s.undo.cur; s.acc = s.undo.acc; s.op = s.undo.op; s.undo = null;
+  s.fresh = true; s.operand = s.op !== null; s.err = false;
+  return true;
 }
 
-export function formatResult(x, loc) {
-  if (!isFinite(x)) return "";
-  x = tidy(x);
-  const a = Math.abs(x);
-  if (a !== 0 && (a >= 1e15 || a < 1e-6)) {
-    const [m, e] = x.toExponential(9).split("e");
-    return formatNumberString(String(parseFloat(m)), loc) + "E" + e.replace("+", "").replace("-", "−");
-  }
-  return formatNumberString(String(x), loc);
+export function setBit(s, i, on) {
+  const m = 1n << BigInt(i);
+  const nv = mask(on ? (s.cur | m) : (s.cur & ~m), s.bits);
+  if (nv === mask(s.cur, s.bits)) return false;
+  clearErr(s); s.cur = nv; s.fresh = true; s.operand = true;
+  return true;
 }
 
-const OP_GLYPH = { "+": "+", "-": "−", "*": "×", "/": "÷", "^": "^" };
-const FN_GLYPH = {
-  sin: "sin(", cos: "cos(", tan: "tan(", asin: "sin⁻¹(", acos: "cos⁻¹(", atan: "tan⁻¹(",
-  ln: "ln(", log: "log(", sqrt: "√(", cbrt: "∛(", exp: "e^(", pow10: "10^(",
-};
-const POST_GLYPH = { "%": "%", "!": "!", sq: "²", cube: "³", inv: "⁻¹" };
-
-export function renderTokens(tokens, loc) {
-  let s = "";
-  tokens.forEach((t, idx) => {
-    const prev = tokens[idx - 1];
-    switch (t.t) {
-      case "num": s += formatNumberString(t.v, loc); break;
-      case "op": {
-        const unary = t.v === "-" && (!prev || prev.t === "op" || prev.t === "lp" || prev.t === "fn");
-        s += unary ? "−" : " " + OP_GLYPH[t.v] + " ";
-        break;
-      }
-      case "lp": s += "("; break;
-      case "rp": s += ")"; break;
-      case "fn": s += FN_GLYPH[t.v]; break;
-      case "post": s += POST_GLYPH[t.v]; break;
-      case "const": s += t.v === "pi" ? "π" : "e"; break;
-    }
-  });
-  return s.replace(/\s+/g, " ").trim();
+export function setWordSize(s, n) {
+  s.bits = n;
+  s.cur = mask(s.cur, n);
+  if (s.acc !== null) s.acc = mask(s.acc, n);
 }
