@@ -1,6 +1,7 @@
-# BitWise — kalkulator (PWA + Android-app)
+# BitWise — programmererkalkulator (PWA + Android-app)
 
-Standard-, vitenskapelig og programmererkalkulator. Kjører som installerbar
+Kalkulator for utviklere: HEX/DEC/OCT/BIN, bitoperasjoner, ordstørrelser
+8–128 bit, bit-inspektør, bytes og IEEE 754-flyttall. Kjører som installerbar
 nettapp (PWA) på GitHub Pages og som ekte Android-app (APK/AAB) via
 Trusted Web Activity (TWA). Norsk og engelsk, lyst og mørkt tema, fungerer uten nett.
 
@@ -9,13 +10,13 @@ Trusted Web Activity (TWA). Norsk og engelsk, lyst og mørkt tema, fungerer uten
 ```
 public/                     alt som publiseres
   index.html                markup (landemerker, dialoger, i18n-attributter)
-  style.css                 designsystem: tokens, temaer, komponenter
-  js/core.js                ren regnelogikk (uttrykksmotor + BigInt-programmerer)
+  style.css                 monokromt designsystem: én aksentfarge, kun på «=»
+  js/core.js                ren regnelogikk og tastetilstand (BigInt, uten DOM)
   js/i18n.js                tekster (nb/en) og tallformat per språk
   js/app.js                 brukergrensesnitt og hendelser
   sw.js                     service worker (offline + oppdateringer)
   manifest.json, icons/, fonts/ (IBM Plex, SIL OFL)
-test/core.test.js           enhetstester for regnemotoren
+test/core.test.js           enhetstester for regnelogikken
 test/e2e/app.e2e.js         Playwright-tester i Chromium + axe (WCAG AA)
 twa/twa-manifest.json       Android-appens konfigurasjon (pakkenavn, farger, URL)
 tools/twa/generate.mjs      lager Android-prosjektet med @bubblewrap/core

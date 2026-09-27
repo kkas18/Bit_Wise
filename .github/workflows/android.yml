@@ -24,8 +24,8 @@ jobs:
 
       - name: Version (versionCode must grow with every build)
         run: |
-          echo "TWA_VERSION_CODE=$((14000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "TWA_VERSION_NAME=14.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "TWA_VERSION_CODE=$((15000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "TWA_VERSION_NAME=15.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:

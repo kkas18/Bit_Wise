@@ -1,21 +1,45 @@
 {
-  "name": "BitWise — Calculator",
+  "name": "BitWise — Programmer Calculator",
   "short_name": "BitWise",
-  "description": "Standard, scientific and programmer calculator — bases, bits, bytes and floats.",
+  "description": "Programmer calculator — bases, bits, bytes and IEEE 754 floats.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0B0D11",
-  "theme_color": "#0B0D11",
+  "background_color": "#0B0B0C",
+  "theme_color": "#0B0B0C",
   "lang": "nb",
   "dir": "ltr",
-  "categories": ["utilities", "productivity", "education"],
+  "categories": [
+    "utilities",
+    "developer tools",
+    "productivity"
+  ],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
