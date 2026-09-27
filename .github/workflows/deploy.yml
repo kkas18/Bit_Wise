@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -23,18 +27,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Stamp build id into sw.js and index.html
+      - name: Stamp build id into the app shell
         run: |
           BUILD="${GITHUB_SHA::7}"
-          sed -i "s/__BUILD__/$BUILD/g" sw.js index.html
+          sed -i "s/__BUILD__/$BUILD/g" public/sw.js public/index.html public/js/app.js
           echo "Build $BUILD"
 
-      - name: Copy shared file for the bitwise-kalkulator.html alias
-        run: cp index.html bitwise-kalkulator.html
+      - name: Keep the old bitwise-kalkulator.html address working
+        run: cp public/index.html public/bitwise-kalkulator.html
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: public
       - id: deployment
         uses: actions/deploy-pages@v4

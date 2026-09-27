@@ -1,0 +1,79 @@
+name: Android app (TWA)
+
+on:
+  push:
+    branches: [main]
+    paths: ["public/**", "twa/**", "tools/**", "package.json", "package-lock.json", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["public/**", "twa/**", "tools/**", "package.json", "package-lock.json", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # publish the APK as a GitHub Release on main
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version (versionCode must grow with every build)
+        run: |
+          echo "TWA_VERSION_CODE=$((14000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "TWA_VERSION_NAME=14.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+          cache-dependency-path: twa/twa-manifest.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Android SDK packages
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0" > /dev/null
+
+      - name: Generate the TWA Android project
+        run: node tools/twa/generate.mjs
+
+      - name: Build release APK and bundle
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease bundleRelease
+
+      - name: Sign
+        id: sign
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash tools/twa/sign.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BitWise-${{ env.TWA_VERSION_NAME }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.sign.outputs.official == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${TWA_VERSION_NAME}"
+          gh release create "$TAG" dist/* \
+            --title "BitWise ${TWA_VERSION_NAME}" \
+            --notes "Android app (Trusted Web Activity). Install BitWise-${TWA_VERSION_NAME}.apk on your phone; upload the .aab to Google Play." \
+            --target "$GITHUB_SHA"
