@@ -3,3 +3,4 @@ node_modules/
 *.keystore
 *.jks
 /test-results/
+dist/

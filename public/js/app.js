@@ -659,7 +659,7 @@ function showHintCard(title, html) {
 }
 function hideHint() { $("hintcard").hidden = true; }
 function showKeyHint(k) {
-  const h = hint(k === "DEG" ? "DEG" : k);
+  const h = hint(k);
   if (!h) return false;
   const [title, text, ex] = h;
   showHintCard(title, esc(text) + (ex ? `<div class="hintcard__ex"><span>${esc(DICT[lang()].hintTry)}</span>${esc(ex)}</div>` : ""));
@@ -868,17 +868,17 @@ $("sciToggle").addEventListener("click", () => { haptic(8); setSci(!$("sci").cla
 
 /* swipes: display changes base (PRG); keypad changes calculator */
 function swipe(el, onSwipe, { min = 56, ratio = 0.6 } = {}) {
-  let x0 = 0, y0 = 0, t0 = 0, moved = false;
-  el.addEventListener("touchstart", (e) => { const p = e.touches[0]; x0 = p.clientX; y0 = p.clientY; t0 = Date.now(); moved = false; }, { passive: true });
-  el.addEventListener("touchmove", (e) => { const p = e.touches[0]; if (Math.abs(p.clientX - x0) > 12) moved = true; }, { passive: true });
+  let x0 = 0, y0 = 0, t0 = 0, swiped = false;
+  el.addEventListener("touchstart", (e) => { const p = e.touches[0]; x0 = p.clientX; y0 = p.clientY; t0 = Date.now(); swiped = false; }, { passive: true });
   el.addEventListener("touchend", (e) => {
     const p = e.changedTouches[0], dx = p.clientX - x0, dy = p.clientY - y0;
     if (Date.now() - t0 > 600 || Math.abs(dx) < min || Math.abs(dy) > Math.abs(dx) * ratio) return;
     disarm();
+    swiped = true;
     onSwipe(dx < 0 ? "left" : "right");
   }, { passive: true });
-  /* swallow the click a real swipe would otherwise trigger */
-  el.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  /* swallow the click that a completed swipe would otherwise trigger */
+  el.addEventListener("click", (e) => { if (swiped) { e.stopPropagation(); e.preventDefault(); swiped = false; } }, true);
 }
 swipe($("swipeZone"), (dir) => {
   const i = MODES.indexOf(S.mode);
@@ -886,6 +886,19 @@ swipe($("swipeZone"), (dir) => {
 }, { min: 48, ratio: 0.7 });
 swipe($("pad"), (dir) => dir === "right" && setApp("STD"));
 swipe($("sPad"), (dir) => dir === "left" && setApp("PRG"));
+
+/* segmented controls: arrow keys move the selection (roving tabindex) */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const btn = e.target.closest && e.target.closest(".seg__btn");
+  if (!btn) return;
+  const all = [...btn.parentElement.querySelectorAll(".seg__btn")];
+  const next = all[(all.indexOf(btn) + (e.key === "ArrowRight" ? 1 : all.length - 1)) % all.length];
+  e.preventDefault();
+  e.stopPropagation();
+  next.focus();
+  next.click();
+}, true);
 
 /* hint card: any tap elsewhere dismisses */
 document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".hintcard")) hideHint(); }, true);
@@ -986,9 +999,11 @@ window.addEventListener("appinstalled", () => {
 
 /* ================= offline + updates ================= */
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  let refreshing = false;
+  /* reload only when the user accepted an update — the first install also
+     fires controllerchange (clients.claim) and must not wipe what they typed */
+  let updateAccepted = false, refreshing = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (refreshing) return;
+    if (!updateAccepted || refreshing) return;
     refreshing = true;
     location.reload();
   });
@@ -997,7 +1012,7 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     const offer = (w) => {
       if (!navigator.serviceWorker.controller) return;
       $("updateBar").hidden = false;
-      $("updateBtn").onclick = () => { $("updateBar").hidden = true; w.postMessage("SKIP_WAITING"); };
+      $("updateBtn").onclick = () => { updateAccepted = true; $("updateBar").hidden = true; w.postMessage("SKIP_WAITING"); };
     };
     if (reg.waiting) offer(reg.waiting);
     reg.addEventListener("updatefound", () => {

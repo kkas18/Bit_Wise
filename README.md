@@ -1,37 +1,107 @@
-# BitWise – installerbar PWA på GitHub Pages
+# BitWise — kalkulator (PWA + Android-app)
 
-## Filer
+Standard-, vitenskapelig og programmererkalkulator. Kjører som installerbar
+nettapp (PWA) på GitHub Pages og som ekte Android-app (APK/AAB) via
+Trusted Web Activity (TWA). Norsk og engelsk, lyst og mørkt tema, fungerer uten nett.
+
+## Struktur
+
 ```
-index.html                  appen (én fil)
-bitwise-kalkulator.html     lages automatisk av workflowen (kopi av index.html)
-manifest.json               PWA-manifest (navn, farger, ikoner)
-sw.js                       service worker – offline + automatisk oppdatering
-icons/                      ikonsett (any + maskable, Apple, favicon)
-.github/workflows/deploy.yml  publiserer til GitHub Pages ved hver push
-.nojekyll                   hindrer at GitHub Pages hopper over filer/mapper
+public/                     alt som publiseres
+  index.html                markup (landemerker, dialoger, i18n-attributter)
+  style.css                 designsystem: tokens, temaer, komponenter
+  js/core.js                ren regnelogikk (uttrykksmotor + BigInt-programmerer)
+  js/i18n.js                tekster (nb/en) og tallformat per språk
+  js/app.js                 brukergrensesnitt og hendelser
+  sw.js                     service worker (offline + oppdateringer)
+  manifest.json, icons/, fonts/ (IBM Plex, SIL OFL)
+test/core.test.js           enhetstester for regnemotoren
+test/e2e/app.e2e.js         Playwright-tester i Chromium + axe (WCAG AA)
+twa/twa-manifest.json       Android-appens konfigurasjon (pakkenavn, farger, URL)
+tools/twa/generate.mjs      lager Android-prosjektet med @bubblewrap/core
+tools/twa/sign.sh           signerer APK/AAB og lager assetlinks.json
+.github/workflows/          ci.yml · deploy.yml (Pages) · android.yml (APK)
 ```
 
-## Førstegangsoppsett (én gang)
-1. Opprett et repo (f.eks. `bitwise`) og legg alle filene inn – **inkludert mappen `.github/workflows/`**.
-2. Gå til **Settings → Pages → Build and deployment → Source** og velg **GitHub Actions**.
-3. Push til `main`. Etter ca. ett minutt ligger appen på
-   `https://<brukernavn>.github.io/bitwise/`.
-4. Åpne adressen i Chrome eller Samsung Internet på telefonen og trykk
-   installasjonsknappen i toppraden (eller ⋮ → *Installer app*).
+## Utvikling
 
-## Slik fungerer automatisk oppdatering
-- Ved hver push erstatter workflowen `__BUILD__` i `sw.js` og `index.html` med
-  commit-hashen. Du trenger aldri å endre versjonsnummer manuelt.
-- En ny `sw.js` = ny cache. Neste gang appen åpnes (eller kommer i forgrunnen)
-  oppdages den nye versjonen, og en linje nederst sier
-  *«A new version of BitWise is ready – Update»*. Ett trykk laster inn den nye.
-- Gamle cacher slettes automatisk. Appen fungerer fortsatt helt offline.
-- Build-id-en vises nederst i guiden (?), så du kan se hvilken versjon som kjører.
+```bash
+npm ci
+npm run serve        # http://localhost:8080
+npm test             # enhetstester
+npm run test:e2e     # nettlesertester + tilgjengelighet
+```
 
-## Vanlige feil
-- **Ingen installasjonsknapp:** Pages må serveres over `https` (GitHub gjør det
-  automatisk), og manifest/ikoner må ligge i samme mappe som `index.html`.
-- **Ser ikke endringer:** vent til workflowen er grønn under *Actions*, lukk appen
-  helt og åpne igjen – oppdateringslinjen kommer da.
-- **Endret repo-navn:** manifestet bruker relative stier (`./`), så det virker
-  uansett navn; ingenting må endres.
+## Nettappen (GitHub Pages)
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Push til `main`. Testene kjøres først, deretter publiseres `public/` til
+   `https://kkas18.github.io/Bit_Wise/`.
+3. Byggnummeret (commit-hash) stemples inn i `sw.js`, så hver publisering gir
+   en ny cache og en «Oppdater»-linje i appen.
+
+## Android-appen (TWA)
+
+Workflowen **Android app (TWA)** bygger appen ved hver push til `main` og i pull
+requests. APK-en ligger under *Actions → kjøringen → Artifacts*, og på `main`
+publiseres den også som en **GitHub Release** (lett å laste ned fra telefonen).
+
+### Engangsoppsett — signeringsnøkkel
+
+Android krever at alle oppdateringer signeres med samme nøkkel. Lag den én gang
+og ta godt vare på den (mister du den, kan appen ikke oppdateres):
+
+```bash
+keytool -genkeypair -keystore bitwise-release.jks -storetype PKCS12 \
+  -alias bitwise -keyalg RSA -keysize 4096 -validity 10000 \
+  -dname "CN=BitWise"
+base64 -w0 bitwise-release.jks > bitwise-release.jks.b64
+```
+
+Legg inn fire hemmeligheter under **Settings → Secrets and variables → Actions**:
+
+| Navn | Verdi |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | innholdet i `bitwise-release.jks.b64` |
+| `ANDROID_KEYSTORE_PASSWORD` | passordet du valgte |
+| `ANDROID_KEY_ALIAS` | `bitwise` |
+| `ANDROID_KEY_PASSWORD` | samme passord (PKCS12 bruker ett passord) |
+
+Uten hemmelighetene signeres APK-en med en midlertidig nøkkel (filnavnet får
+`-unofficial`): den kan installeres for testing, men ikke oppdateres senere.
+
+### Engangsoppsett — Digital Asset Links (fjerner adressefeltet)
+
+En TWA viser appen i fullskjerm bare når nettsiden bekrefter appens nøkkel.
+Filen må ligge i **roten av domenet**:
+`https://kkas18.github.io/.well-known/assetlinks.json`.
+
+Siden appen ligger under `/Bit_Wise/`, må filen ligge i et eget repo som heter
+**`kkas18.github.io`**:
+
+1. Opprett repoet `kkas18.github.io` (offentlig) og slå på Pages for det.
+2. Last ned `assetlinks.json` fra artefakten til Android-bygget og legg den i
+   `.well-known/assetlinks.json` i det repoet.
+3. Legg til en tom fil `.nojekyll` i roten (ellers hopper Jekyll over `.well-known`).
+4. Publiserer du på Google Play med «Play App Signing», legger du også til
+   fingeravtrykket fra Play Console (*Test and release → App integrity*) i samme fil.
+
+Før dette er gjort, åpnes appen med en tynn adresselinje øverst. Alt annet fungerer.
+
+### Installere APK-en på telefonen
+
+1. Åpne siste Release (eller artefakten) på telefonen og last ned `BitWise-*.apk`.
+2. Tillat «Installer ukjente apper» for nettleseren når Android spør.
+3. Åpne filen og trykk **Installer**.
+
+### Google Play
+
+Last opp `BitWise-*.aab` fra samme Release i Play Console. `versionCode` øker
+automatisk med byggnummeret.
+
+## Tilgjengelighet og kvalitet
+
+- Kontrast i begge temaer er minst 4,5 : 1 (WCAG AA), og axe kjøres i CI.
+- Zoom er tillatt, og alle kontroller har etiketter på norsk og engelsk.
+- Android-tilbakeknappen lukker ark og inspektør før den forlater appen.
+- `prefers-reduced-motion` respekteres.

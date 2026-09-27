@@ -81,6 +81,46 @@ test("programmer: bases, insights, bit inspector", async () => {
   await page.context().close();
 });
 
+test("undo, memory, keyboard and v13 history migration", async () => {
+  const ctx = await browser.newContext({ viewport: { width: 393, height: 852 }, locale: "nb-NO", reducedMotion: "reduce" });
+  await ctx.addInitScript(() => {
+    if (!sessionStorage.getItem("seeded")) {
+      sessionStorage.setItem("seeded", "1");
+      localStorage.setItem("bw.hist", JSON.stringify([{ e: "1 000 × 2", r: "2 000" }]));
+    }
+  });
+  const page = await ctx.newPage();
+  await page.goto(base);
+  await page.waitForFunction(() => window.BITWISE);
+  const rows = (await page.locator(".tape__row").allInnerTexts()).map((r) => r.replace(/[\u202F\u00A0]/g, " "));
+  assert.deepEqual(rows, ["1 000 × 2\n2 000"], "v13 entries survive the upgrade");
+
+  await page.keyboard.type("(2+3)*4^2");
+  assert.equal(await text(page, "#sExpr"), "(2 + 3) × 4 ^ 2");
+  await page.keyboard.press("Enter");
+  assert.equal(await text(page, "#sResult"), "80");
+
+  await page.click("#sciToggle");
+  await tap(page, "#sciGrid", ["MPLUS"]);
+  assert.ok(await page.locator("#memBadge").isVisible());
+  await tap(page, "#sPad", ["AC"]);
+  await tap(page, "#sciGrid", ["MR"]);
+  assert.equal(await text(page, "#sExpr"), "80");
+
+  /* long-press AC brings a cleared expression back */
+  await tap(page, "#sPad", ["AC", "7", "MUL", "6", "AC"]);
+  const ac = await page.locator('#sPad [data-k="AC"]').boundingBox();
+  await page.mouse.move(ac.x + 10, ac.y + 10);
+  await page.mouse.down(); await page.waitForTimeout(600); await page.mouse.up();
+  assert.equal(await text(page, "#sExpr"), "7 × 6");
+
+  /* segmented controls are keyboard operable */
+  await page.focus('#appSeg [data-app="STD"]');
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => window.BITWISE.APP.mode === "PRG");
+  await ctx.close();
+});
+
 test("settings: language and theme switch at runtime", async () => {
   const page = await open();
   await page.click("#settingsBtn");
