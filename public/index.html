@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="nb" data-theme="dark" data-accent="std">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0D11">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="BitWise — standard, scientific and programmer calculator.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BitWise">
+<title>BitWise</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preload" href="fonts/ibm-plex-sans-latin-300-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/ibm-plex-sans-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css?v=__BUILD__">
+<script>
+/* apply the saved theme before first paint so there is no flash */
+(function () {
+  var p = null;
+  try { p = localStorage.getItem("bw.theme"); } catch (e) {}
+  var dark = p === "dark" || (p !== "light" && !(window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches));
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+})();
+</script>
+<script type="module" src="js/app.js?v=__BUILD__"></script>
+</head>
+<body>
+<div class="app" id="app">
+
+<header class="top">
+  <div class="seg seg--app" id="appSeg" role="tablist" data-i18n-aria="app.switch">
+    <span class="seg__ind" aria-hidden="true"></span>
+    <button class="seg__btn" role="tab" data-app="STD" data-i18n="app.std">Standard</button>
+    <button class="seg__btn" role="tab" data-app="PRG" data-i18n="app.prg">Programmerer</button>
+  </div>
+  <span class="top__spacer"></span>
+  <button class="icon-btn" id="installBtn" hidden data-i18n-aria="a.install">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+  </button>
+  <button class="icon-btn" id="helpBtn" data-i18n-aria="a.help">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.7.3-1 .8-1 1.6M12 16.8v.1"/></svg>
+  </button>
+  <button class="icon-btn" id="settingsBtn" data-i18n-aria="a.settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+  </button>
+</header>
+
+<!-- ================= STANDARD ================= -->
+<main class="view" id="viewSTD" data-view="STD">
+  <section class="screen">
+    <div class="tape" id="tape" role="log" data-i18n-aria="a.history" tabindex="-1"></div>
+    <div class="readout">
+      <div class="readout__meta">
+        <span class="badge" id="memBadge" hidden>M</span>
+        <span class="badge badge--quiet" id="angleBadge">DEG</span>
+        <span class="top__spacer"></span>
+        <button class="text-btn" id="histClear" hidden data-i18n-aria="a.clearHist">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M6.5 7l.9 12h9.2l.9-12"/></svg>
+        </button>
+      </div>
+      <div class="expr" id="sExpr"></div>
+      <div class="result" id="sResult" aria-live="polite">0</div>
+    </div>
+  </section>
+
+  <section class="drawer" id="sci">
+    <button class="drawer__toggle" id="sciToggle" aria-expanded="false" aria-controls="sciGrid">
+      <span data-i18n="sci">Vitenskapelig</span>
+      <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+    </button>
+    <div class="drawer__body" id="sciGrid">
+      <div class="keys keys--sci">
+        <button class="k k--fn" data-k="SECOND" aria-pressed="false">2nd</button>
+        <button class="k k--fn" data-k="DEG">DEG</button>
+        <button class="k k--fn" data-k="LP">(</button>
+        <button class="k k--fn" data-k="RP">)</button>
+        <button class="k k--fn" data-k="NEG" data-i18n-aria="k.NEG">±</button>
+
+        <button class="k k--fn" data-k="SIN" data-alt="sin⁻¹">sin</button>
+        <button class="k k--fn" data-k="COS" data-alt="cos⁻¹">cos</button>
+        <button class="k k--fn" data-k="TAN" data-alt="tan⁻¹">tan</button>
+        <button class="k k--fn" data-k="LN" data-alt="eˣ">ln</button>
+        <button class="k k--fn" data-k="LOG" data-alt="10ˣ">log</button>
+
+        <button class="k k--fn" data-k="SQRT" data-alt="∛">√</button>
+        <button class="k k--fn" data-k="SQ" data-alt="x³">x²</button>
+        <button class="k k--fn" data-k="POW">xʸ</button>
+        <button class="k k--fn" data-k="INV">1/x</button>
+        <button class="k k--fn" data-k="FACT">x!</button>
+
+        <button class="k k--fn" data-k="PI">π</button>
+        <button class="k k--fn" data-k="EULER">e</button>
+        <button class="k k--fn" data-k="EE">EE</button>
+        <button class="k k--fn" data-k="MR" data-alt="MC">MR</button>
+        <button class="k k--fn" data-k="MPLUS" data-alt="M−">M+</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="keys keys--std" id="sPad">
+    <button class="k k--clear" data-k="AC" data-i18n-aria="k.AC">AC</button>
+    <button class="k k--fn" data-k="BS" data-i18n-aria="k.BS">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5h10.5a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9L3.5 12z"/><path d="M12.5 9.5l5 5m0-5l-5 5"/></svg>
+    </button>
+    <button class="k k--fn" data-k="PCT" data-i18n-aria="k.PCT">%</button>
+    <button class="k k--op" data-k="DIV" data-i18n-aria="k.DIV">÷</button>
+
+    <button class="k" data-k="7">7</button>
+    <button class="k" data-k="8">8</button>
+    <button class="k" data-k="9">9</button>
+    <button class="k k--op" data-k="MUL" data-i18n-aria="k.MUL">×</button>
+
+    <button class="k" data-k="4">4</button>
+    <button class="k" data-k="5">5</button>
+    <button class="k" data-k="6">6</button>
+    <button class="k k--op" data-k="SUB" data-i18n-aria="k.SUB">−</button>
+
+    <button class="k" data-k="1">1</button>
+    <button class="k" data-k="2">2</button>
+    <button class="k" data-k="3">3</button>
+    <button class="k k--op" data-k="ADD" data-i18n-aria="k.ADD">+</button>
+
+    <button class="k k--fn" data-k="PAREN" data-i18n-aria="k.PAREN">( )</button>
+    <button class="k" data-k="0">0</button>
+    <button class="k" data-k="DOT" id="dotKey" data-i18n-aria="k.DOT">,</button>
+    <button class="k k--eq" data-k="EQ" data-i18n-aria="k.EQ">=</button>
+  </div>
+</main>
+
+<!-- ================= PROGRAMMER ================= -->
+<main class="view" id="viewPRG" data-view="PRG" hidden>
+  <section class="screen screen--prg" id="prgScreen">
+    <div class="seg seg--base" id="baseSeg" role="tablist" data-i18n-aria="a.base">
+      <span class="seg__ind" aria-hidden="true"></span>
+      <button class="seg__btn" role="tab" data-mode="HEX">HEX</button>
+      <button class="seg__btn" role="tab" data-mode="DEC">DEC</button>
+      <button class="seg__btn" role="tab" data-mode="OCT">OCT</button>
+      <button class="seg__btn" role="tab" data-mode="BIN">BIN</button>
+    </div>
+
+    <div class="display" id="swipeZone">
+      <div class="disp-inner" id="dispInner">
+        <button class="pending" id="pending" hidden data-i18n-aria="a.swap"></button>
+        <div class="result result--prg" id="mainVal" aria-live="polite">0</div>
+        <div class="conv" id="conv"></div>
+        <div class="insight" id="insight"></div>
+      </div>
+    </div>
+
+    <div class="meta" id="meta">
+      <div class="seg seg--bits" id="bitsSeg" role="radiogroup" data-i18n-aria="a.wordSize">
+        <span class="seg__ind" aria-hidden="true"></span>
+        <button class="seg__btn" role="radio" data-bits="8">8</button>
+        <button class="seg__btn" role="radio" data-bits="16">16</button>
+        <button class="seg__btn" role="radio" data-bits="32">32</button>
+        <button class="seg__btn" role="radio" data-bits="64">64</button>
+        <button class="seg__btn" role="radio" data-bits="128">128</button>
+      </div>
+      <button class="chip" id="sgn" aria-pressed="false" data-i18n="unsigned">Usignert</button>
+    </div>
+
+    <section class="inspect" id="inspect" data-i18n-aria="a.inspector">
+      <div class="inspect__head">
+        <div class="seg seg--view" id="viewSeg" role="tablist">
+          <span class="seg__ind" aria-hidden="true"></span>
+          <button class="seg__btn" role="tab" data-view="bits" data-i18n="view.bits">Bits</button>
+          <button class="seg__btn" role="tab" data-view="bytes" data-i18n="view.bytes">Bytes</button>
+          <button class="seg__btn" role="tab" data-view="float" data-i18n="view.float">Flyttall</button>
+        </div>
+        <button class="chip chip--sm" id="fieldBtn" aria-pressed="false" data-i18n="field">Felt</button>
+        <button class="chip chip--sm" id="endBtn" hidden>BE</button>
+        <button class="chip chip--sm" id="copyBtn" hidden data-i18n="copy">Kopier</button>
+        <span class="top__spacer"></span>
+        <button class="icon-btn icon-btn--flat" id="fold" aria-expanded="false" aria-controls="inspectBody" data-i18n-aria="a.expand">
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+        </button>
+      </div>
+      <div class="inspect__body" id="inspectBody"></div>
+    </section>
+  </section>
+
+  <div class="keys keys--prg" id="pad"></div>
+</main>
+</div>
+
+<!-- ================= OVERLAYS ================= -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="update-bar" id="updateBar" hidden>
+  <span data-i18n="update.text">En ny versjon av BitWise er klar</span>
+  <button class="update-bar__btn" id="updateBtn" data-i18n="update.action">Oppdater</button>
+</div>
+
+<div class="hintcard" id="hintcard" hidden role="tooltip">
+  <div class="hintcard__title" id="hintKey"></div>
+  <div class="hintcard__text" id="hintTxt"></div>
+</div>
+
+<dialog class="sheet" id="settings" aria-labelledby="settingsTitle">
+  <div class="sheet__grip" aria-hidden="true"></div>
+  <header class="sheet__head">
+    <h2 id="settingsTitle" data-i18n="settings.title">Innstillinger</h2>
+    <button class="icon-btn icon-btn--flat" data-close data-i18n-aria="a.close">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </header>
+  <div class="field">
+    <div class="field__label" id="themeLbl" data-i18n="settings.theme">Tema</div>
+    <div class="seg seg--wide" id="themeSeg" role="radiogroup" aria-labelledby="themeLbl">
+      <span class="seg__ind" aria-hidden="true"></span>
+      <button class="seg__btn" role="radio" data-theme-pref="auto" data-i18n="settings.theme.auto">System</button>
+      <button class="seg__btn" role="radio" data-theme-pref="light" data-i18n="settings.theme.light">Lyst</button>
+      <button class="seg__btn" role="radio" data-theme-pref="dark" data-i18n="settings.theme.dark">Mørkt</button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field__label" id="langLbl" data-i18n="settings.lang">Språk</div>
+    <div class="seg seg--wide" id="langSeg" role="radiogroup" aria-labelledby="langLbl">
+      <span class="seg__ind" aria-hidden="true"></span>
+      <button class="seg__btn" role="radio" data-lang-pref="auto" data-i18n="settings.lang.auto">System</button>
+      <button class="seg__btn" role="radio" data-lang-pref="nb" lang="nb">Norsk</button>
+      <button class="seg__btn" role="radio" data-lang-pref="en" lang="en">English</button>
+    </div>
+  </div>
+  <label class="switch-row">
+    <span data-i18n="settings.haptics">Vibrasjon ved tastetrykk</span>
+    <input type="checkbox" class="switch" id="hapticsToggle" checked>
+  </label>
+  <button class="row-btn" id="openGuide">
+    <span data-i18n="settings.guide">Åpne veiledningen</span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+  </button>
+  <p class="sheet__foot" id="aboutLine"></p>
+</dialog>
+
+<dialog class="sheet sheet--tall" id="help" aria-labelledby="helpTitle">
+  <div class="sheet__grip" aria-hidden="true"></div>
+  <header class="sheet__head">
+    <h2 id="helpTitle" data-i18n="help.title">Slik bruker du BitWise</h2>
+    <button class="icon-btn icon-btn--flat" data-close data-i18n-aria="a.close">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </header>
+  <div class="help" id="helpBody"></div>
+</dialog>
+
+<noscript><p style="padding:24px">BitWise needs JavaScript.</p></noscript>
+</body>
+</html>
