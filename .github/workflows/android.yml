@@ -24,8 +24,8 @@ jobs:
 
       - name: Version (versionCode must grow with every build)
         run: |
-          echo "TWA_VERSION_CODE=$((15000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "TWA_VERSION_NAME=15.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "TWA_VERSION_CODE=$((16000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "TWA_VERSION_NAME=16.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -73,7 +73,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${TWA_VERSION_NAME}"
-          gh release create "$TAG" dist/* \
-            --title "BitWise ${TWA_VERSION_NAME}" \
-            --notes "Android app (Trusted Web Activity). Install BitWise-${TWA_VERSION_NAME}.apk on your phone; upload the .aab to Google Play." \
-            --target "$GITHUB_SHA"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber   # re-run of the same build
+          else
+            gh release create "$TAG" dist/* \
+              --title "BitWise ${TWA_VERSION_NAME}" \
+              --notes "Android app (Trusted Web Activity). Install BitWise-${TWA_VERSION_NAME}.apk on your phone; upload the .aab to Google Play." \
+              --target "$GITHUB_SHA"
+          fi

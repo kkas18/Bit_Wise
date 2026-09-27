@@ -136,3 +136,119 @@ for (const scheme of ["dark", "light"]) {
     await page.context().close();
   });
 }
+
+/* ---------------- review fixes ---------------- */
+test("Enter activates a focused button; after mouse clicks Enter means =", async () => {
+  const page = await open({ locale: "en-US" });
+  await page.click('#baseSeg [data-mode="DEC"]');
+  await tap(page, ["5", "ADD", "3"]);            /* mouse clicks must not leave focus on a key */
+  await page.keyboard.press("Enter");
+  assert.equal(await text(page, "#mainVal"), "8");
+  await page.focus('#baseSeg [data-mode="DEC"]');   /* arrow-key users land on a tab… */
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.type("2*3");
+  await page.keyboard.press("Enter");                  /* …and Enter still means = */
+  assert.equal(await text(page, "#mainVal"), "6");
+  await tap(page, ["AC", "5", "ADD", "3", "EQ"]);
+  await page.focus("#settingsBtn");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator("#settings[open]").count(), 1, "Enter opened the focused button");
+  await page.keyboard.press("Escape");
+  assert.equal(await text(page, "#mainVal"), "8", "the value was not touched");
+  await page.context().close();
+});
+
+test("layout: every key reachable and all conversions visible at small sizes", async () => {
+  for (const [width, height] of [[360, 640], [320, 568], [393, 480], [852, 393]]) {
+    const page = await open({ width, height, locale: "en-US" });
+    await tap(page, ["C", "A", "F", "E"]);
+    const g = await page.evaluate(() => {
+      const card = document.getElementById("screen").getBoundingClientRect();
+      const rows = [...document.querySelectorAll(".conv__row")].every((r) => r.getBoundingClientRect().bottom <= card.bottom + 1);
+      const keyH = Math.min(...[...document.querySelectorAll("#pad .k")].map((k) => k.getBoundingClientRect().height));
+      return { rows, keyH };
+    });
+    assert.ok(g.rows, `${width}x${height}: a conversion row is hidden`);
+    assert.ok(g.keyH >= 36, `${width}x${height}: keys too small (${g.keyH}px)`);
+    await page.click('#pad [data-k="ADD"]');       /* Playwright scrolls into view if needed; fails if unreachable */
+    await page.context().close();
+  }
+});
+
+test("long binary values wrap between 4-bit groups and are never clipped", async () => {
+  const page = await open();
+  await page.click('#bitsSeg [data-bits="128"]');
+  await page.click('#baseSeg [data-mode="BIN"]');
+  await page.waitForFunction(() => window.BITWISE.S.mode === "BIN");
+  await tap(page, ["NOT"]);
+  const r = await page.evaluate(() => {
+    const el = document.getElementById("mainVal");
+    const node = el.firstChild, s = node.textContent, range = document.createRange();
+    const breaks = [];
+    let top = null;
+    for (let i = 0; i < s.length; i++) {
+      range.setStart(node, i); range.setEnd(node, i + 1);
+      const t = Math.round(range.getBoundingClientRect().top);
+      if (top !== null && t > top + 2 && s[i] !== " ") breaks.push(s[i - 1]);
+      top = t;
+    }
+    return { clipped: el.scrollHeight > el.clientHeight + 1, breaks };
+  });
+  assert.equal(r.clipped, false);
+  assert.ok(r.breaks.length >= 1, "value spans several lines");
+  assert.ok(r.breaks.every((c) => c === " "), "every line starts after a group separator");
+  await page.context().close();
+});
+
+test("copy reports failure honestly", async () => {
+  const page = await open({ locale: "en-US" });
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("denied")) } });
+    document.execCommand = () => false;
+  });
+  await tap(page, ["F"]);
+  await page.click("#mainVal");
+  await page.waitForFunction(() => document.getElementById("toast").textContent.includes("Couldn't copy"));
+  await page.context().close();
+});
+
+test("service worker: survives a broken deploy and leaves other apps' caches alone", async (t) => {
+  let broken = false;
+  const srv = await serve(0, {
+    override: (path) => (broken && (path === "/" || path === "/index.html")
+      ? { body: "<!doctype html><title>README</title><h1>Not the app</h1>" } : null),
+  });
+  const url = `http://127.0.0.1:${srv.address().port}/`;
+  const ctx = await browser.newContext({ viewport: { width: 393, height: 852 } });
+  t.after(async () => { await ctx.close(); srv.close(); });
+  const page = await ctx.newPage();
+  await page.goto(url);
+  await page.evaluate(() => caches.open("other-app-v1").then((c) => c.put("/x", new Response("keep me"))));
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+
+  broken = true;                                   /* the site now serves a README instead of the app */
+  await page.reload();
+  await page.waitForFunction(() => !!window.BITWISE, null, { timeout: 5000 });
+  assert.ok(await page.locator("#pad").isVisible(), "cached app shown instead of the broken page");
+  assert.ok((await page.evaluate(() => caches.keys())).includes("other-app-v1"), "foreign cache kept");
+
+  await ctx.setOffline(true);                       /* the old bitwise-kalkulator.html address works offline */
+  await page.goto(url + "bitwise-kalkulator.html");
+  await page.waitForFunction(() => !!window.BITWISE, null, { timeout: 5000 });
+});
+
+test("the value keeps its size on fractional device pixel ratios", async () => {
+  for (const dpr of [1.75, 2.625, 2.75]) {
+    const ctx = await browser.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: dpr, isMobile: true, hasTouch: true });
+    const page = await ctx.newPage();
+    await page.goto(base);
+    await page.waitForFunction(() => window.BITWISE);
+    await page.click('#pad [data-k="F"]');
+    const inline = await page.evaluate(() => document.getElementById("mainVal").style.fontSize);
+    assert.equal(inline, "", `dpr ${dpr}: a single digit was shrunk to ${inline}`);
+    await ctx.close();
+  }
+});

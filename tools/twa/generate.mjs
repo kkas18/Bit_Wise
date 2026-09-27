@@ -1,8 +1,8 @@
 /* Generates the Android (Trusted Web Activity) project for BitWise into ./android
    from twa/twa-manifest.json using @bubblewrap/core.
 
-   The launcher icons are read from public/icons through a throw-away local
-   server, so the build never depends on the live site being deployed first.
+   The launcher icons and the web manifest are read from public/ through a
+   throw-away local server, so the build never depends on the live site.
 
    Env:
      TWA_VERSION_CODE  integer versionCode (defaults to the manifest value)
@@ -24,6 +24,11 @@ const local = `http://127.0.0.1:${server.address().port}/`;
 json.iconUrl = local + "icons/icon-512.png";
 json.maskableIconUrl = local + "icons/icon-maskable-512.png";
 fetchUtils.setFetchEngine("node-fetch");
+/* bubblewrap downloads webManifestUrl and bundles it; serve that from the repo too,
+   while the live URL itself is what gets embedded in the app */
+const liveManifest = json.webManifestUrl;
+const fetchOriginal = fetchUtils.fetch.bind(fetchUtils);
+fetchUtils.fetch = (url) => fetchOriginal(String(url) === liveManifest ? local + "manifest.json" : url);
 
 try {
   const manifest = new TwaManifest(json);

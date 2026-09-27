@@ -38,7 +38,7 @@ else
   export KS_PASS="ephemeral-$(date +%s)"
   export KEY_PASS="$KS_PASS"
   keytool -genkeypair -keystore "$KS" -storetype PKCS12 -alias "$ALIAS" -keyalg RSA -keysize 2048 \
-    -validity 365 -storepass "$KS_PASS" -keypass "$KEY_PASS" -dname "CN=BitWise development build" >/dev/null 2>&1
+    -validity 365 -storepass:env KS_PASS -keypass:env KEY_PASS -dname "CN=BitWise development build" >/dev/null 2>&1
   OFFICIAL=0
 fi
 
@@ -53,11 +53,11 @@ rm -f "$APK.idsig"
 
 if [[ "$OFFICIAL" == 1 && -f "$BUNDLE" ]]; then
   cp "$BUNDLE" "$OUT/BitWise-$VERSION.aab"
-  jarsigner -keystore "$KS" -storepass "$KS_PASS" -keypass "$KEY_PASS" \
+  jarsigner -keystore "$KS" -storepass:env KS_PASS -keypass:env KEY_PASS \
     -sigalg SHA256withRSA -digestalg SHA-256 "$OUT/BitWise-$VERSION.aab" "$ALIAS" >/dev/null
 fi
 
-FP="$(keytool -list -v -keystore "$KS" -alias "$ALIAS" -storepass "$KS_PASS" 2>/dev/null \
+FP="$(keytool -list -v -keystore "$KS" -alias "$ALIAS" -storepass:env KS_PASS 2>/dev/null \
   | awk -F': ' '/SHA256:/ {print $2; exit}' | tr -d ' ')"
 cat > "$OUT/assetlinks.json" <<JSON
 [

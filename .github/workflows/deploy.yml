@@ -4,32 +4,48 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      heal:
+        description: "Internal: set to false by the guard's own redeploy (skips tests and prevents loops)"
+        required: false
+        default: "true"
+      sha:
+        description: "Internal: exact commit the guard redeploys (already tested)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
   test:
+    if: inputs.heal != 'false'   # a guard redeploy re-publishes a commit that already passed
     uses: ./.github/workflows/ci.yml
 
   deploy:
     needs: test
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ubuntu-latest
+    concurrency:              # only the deploy itself is serialised; the guard never blocks the next push
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Stamp build id into the app shell
+        env:
+          SHA: ${{ inputs.sha || github.sha }}
         run: |
-          BUILD="${GITHUB_SHA::7}"
+          BUILD="${SHA::7}"
           sed -i "s/__BUILD__/$BUILD/g" public/sw.js public/index.html public/js/app.js
           echo "Build $BUILD"
 
@@ -42,3 +58,71 @@ jobs:
           path: public
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # While Settings → Pages → Source is still "Deploy from a branch", GitHub also
+  # publishes the README (Jekyll) for every push, and whichever deploy finishes
+  # last is live. This job waits for that legacy build and, if it won the race,
+  # starts a fresh app deploy so the app is back within a minute.
+  guard:
+    needs: deploy
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: write     # read this commit's runs, dispatch the healing redeploy
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      URL: ${{ needs.deploy.outputs.page_url }}
+      SHA: ${{ inputs.sha || github.sha }}
+    steps:
+      - name: Wait for a legacy branch build of this commit
+        id: legacy
+        run: |
+          runs() {
+            gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+              --jq "[.workflow_runs[] | select(.name == \"pages build and deployment\") | select($1)] | length"
+          }
+          state=none
+          for i in $(seq 1 90); do                          # up to 15 minutes
+            total=$(runs true); open=$(runs '.status != "completed"')
+            if [ "$total" -gt 0 ] && [ "$open" -eq 0 ]; then state=done; break; fi
+            if [ "$total" -eq 0 ] && [ "$i" -ge 3 ]; then break; fi    # none (it starts with the push): source is GitHub Actions
+            sleep 10
+          done
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "Legacy branch build: $state"
+
+      - name: Check that the live site serves this build of the app
+        id: live
+        run: |
+          BUILD="${SHA::7}"
+          for i in $(seq 1 12); do                          # the CDN can lag briefly
+            if curl -fsS "${URL}?check=$RANDOM" | grep -q "js/app.js?v=$BUILD" \
+               && curl -fsS -o /dev/null "${URL}js/app.js?v=$BUILD"; then
+              echo "ok=true" >> "$GITHUB_OUTPUT"; echo "Live site serves build $BUILD"; exit 0
+            fi
+            sleep 10
+          done
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+
+      - name: Put the app back
+        if: steps.live.outputs.ok != 'true'
+        run: |
+          if [ "${{ inputs.heal }}" = "false" ]; then
+            echo "::error title=Live site check failed::The healing redeploy did not bring the app back. Check Settings → Pages."
+            exit 1
+          fi
+          HEAD=$(gh api "repos/$REPO/commits/$GITHUB_REF_NAME" --jq .sha)
+          if [ "$HEAD" != "$SHA" ]; then
+            echo "::notice::A newer commit ($HEAD) is on $GITHUB_REF_NAME; its own run deploys and guards the site."
+            exit 0
+          fi
+          echo "::warning title=App was overwritten::The legacy branch build replaced the app; redeploying ${SHA::7} now."
+          gh workflow run deploy.yml --repo "$REPO" --ref "$GITHUB_REF_NAME" -f heal=false -f sha="$SHA"
+
+      - name: Remind to switch the Pages source
+        if: steps.legacy.outputs.state == 'done'
+        run: |
+          echo "::warning title=GitHub Pages source::Settings → Pages → Source is 'Deploy from a branch', which also publishes the README over the app. Switch it to 'GitHub Actions' to stop the race for good."
